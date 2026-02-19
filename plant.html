@@ -91,12 +91,7 @@
       </div>
     </div>
 
-    <script>
-      // --- 1. GITHUB CONFIGURATION ---
-      const GITHUB_USER = "Group3CapstonePlantEnclosure";
-      const GITHUB_REPO = "plant-enclosure";
-      const GITHUB_TOKEN = "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"; 
-      const FILE_PATH = "settings.json";
+
 
       // --- 2. PLANT DATA ---
       const plants = {
@@ -218,14 +213,40 @@
         const l = document.createElement("li"); l.textContent=g; guideContainer.appendChild(l);
       });
 
-      // --- 4. SEND TO GITHUB LOGIC ---
-      const sendBtn = document.getElementById("sendBtn");
-      const status = document.getElementById("statusMsg");
+     // --- 4. SEND TO ESP32 LOGIC ---
+const sendBtn = document.getElementById("sendBtn");
+const status = document.getElementById("statusMsg");
 
-      sendBtn.addEventListener("click", async () => {
-        sendBtn.disabled = true;
-        sendBtn.textContent = "Connecting...";
-        status.textContent = "Fetching current SHA...";
+const ESP32_IP = "http://192.168.0.123"; // 🔥 CHANGE THIS
+
+sendBtn.addEventListener("click", async () => {
+  sendBtn.disabled = true;
+  sendBtn.textContent = "Sending...";
+  status.textContent = "Connecting to enclosure...";
+
+  try {
+    const res = await fetch(`${ESP32_IP}/settings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(p.settings)
+    });
+
+    if (!res.ok) throw new Error("ESP32 not responding");
+
+    status.textContent = "✅ Sent to enclosure!";
+    sendBtn.textContent = "Sent Successfully";
+    sendBtn.style.background = "#2cff8a";
+    sendBtn.style.color = "#000";
+
+  } catch (err) {
+    console.error(err);
+    status.textContent = "❌ Failed to connect";
+    sendBtn.textContent = "Retry";
+    sendBtn.disabled = false;
+  }
+});
 
         try {
             const getUrl = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${FILE_PATH}`;
