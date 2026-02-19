@@ -80,7 +80,7 @@ int editStep = 0;
 float currentMinLimit = 0;
 float currentMaxLimit = 100;
 String editUnit = ""; 
-
+String currentHeaderName = "-- MAIN MENU --";
 int tempOnH, tempOnM, tempOffH, tempOffM;
 
 // Menu Logic Structures
@@ -539,14 +539,25 @@ void startSensorTest() { uiState = STATE_SENSOR_TEST; }
 
 void goBack() {
   if(stackDepth == 0) {
-    currentMenu = mainMenu; currentMenuSize = 6; selectedIndex = 0; uiState = STATE_MENU;
+    currentMenu = mainMenu; 
+    currentMenuSize = 6; 
+    selectedIndex = 0; 
+    uiState = STATE_MENU;
+    currentHeaderName = "-- MAIN MENU --"; // Reset to main
   } else {
     stackDepth--;
     currentMenu = menuStack[stackDepth];
     currentMenuSize = menuSizeStack[stackDepth];
     selectedIndex = indexStack[stackDepth];
-    uiState = STATE_SUBMENU; 
-    if(stackDepth==0) uiState = STATE_MENU;
+    uiState = (stackDepth == 0) ? STATE_MENU : STATE_SUBMENU;
+    
+    // If we are still in a submenu, update header to the parent of THIS level
+    if (stackDepth > 0) {
+        // We look at the index saved in the level above to find the name
+        currentHeaderName = menuStack[stackDepth-1][indexStack[stackDepth-1]].name;
+    } else {
+        currentHeaderName = "-- MAIN MENU --";
+    }
   }
   menuScrollOffset = 0;
 }
@@ -555,10 +566,16 @@ void enterSubMenu(MenuItem* item) {
   menuStack[stackDepth] = currentMenu;
   menuSizeStack[stackDepth] = currentMenuSize;
   indexStack[stackDepth] = selectedIndex;
+  
+  // Update the header name to the item we just clicked (e.g., "Temperature")
+  currentHeaderName = String(item->name);
+  currentHeaderName.toUpperCase(); // Optional: Makes it look like a header
+  
   stackDepth++;
   currentMenu = item->children;
   currentMenuSize = item->childCount;
-  selectedIndex = 0; menuScrollOffset = 0;
+  selectedIndex = 0; 
+  menuScrollOffset = 0;
   uiState = STATE_SUBMENU;
 }
 
@@ -610,46 +627,66 @@ void loop() {
   int currentEnc = encoderCount / 4;
   int diff = lastEncoderCount - currentEnc;
   
+  // --- Encoder Logic Replacement ---
   if(diff != 0) {
     lastEncoderCount = currentEnc;
     
+    // Handle Navigation (Main Menu or Submenus)
     if (uiState == STATE_MENU || uiState == STATE_SUBMENU) {
       selectedIndex += diff;
+      
+      // Circular wrap-around for menu items
       if (selectedIndex < 0) selectedIndex = currentMenuSize - 1;
       if (selectedIndex >= currentMenuSize) selectedIndex = 0;
-      if (selectedIndex < menuScrollOffset) menuScrollOffset = selectedIndex;
-      if (selectedIndex >= menuScrollOffset + VISIBLE_ITEMS) menuScrollOffset = selectedIndex - VISIBLE_ITEMS + 1;
+      
+      // Handle scrolling window (VISIBLE_ITEMS)
+      if (selectedIndex < menuScrollOffset) {
+        menuScrollOffset = selectedIndex;
+      }
+      if (selectedIndex >= menuScrollOffset + VISIBLE_ITEMS) {
+        menuScrollOffset = selectedIndex - VISIBLE_ITEMS + 1;
+      }
     } 
+    // Handle Dual Value Editing (e.g., Temperature Low/High)
     else if (uiState == STATE_EDIT_DUAL) {
       editCurrent += diff;
-      if (editStep == 0) { 
+      if (editStep == 0) { // Editing Lower Bound
         if (editCurrent < currentMinLimit) editCurrent = currentMinLimit; 
         if (editCurrent > currentMaxLimit) editCurrent = currentMaxLimit;
+        // Push the upper bound up if the lower bound exceeds it
         if (editCurrent > *pEditVal2) *pEditVal2 = editCurrent;
-      } else { 
+      } else { // Editing Upper Bound
         if (editCurrent < *pEditVal1) editCurrent = *pEditVal1; 
         if (editCurrent > currentMaxLimit) editCurrent = currentMaxLimit; 
       }
     }
+    // Handle Time/Clock Editing (Hours/Minutes)
     else if (uiState == STATE_EDIT_TIME) {
         editCurrent += diff;
+        // Determine if we are editing hours (limit 23) or minutes (limit 59)
         int limit = (editStep == 0 || editStep == 2 || editStep == 10) ? 23 : 59;
+        
+        // Circular wrap-around for time
         if(editCurrent < 0) editCurrent = limit;
         if(editCurrent > limit) editCurrent = 0;
     }
+    // Handle Light (LUX) Threshold Editing
     else if (uiState == STATE_EDIT_LUX) {
-        long step = 100;
-        if (abs(diff) > 1) step = 500;
+        // Dynamic stepping: faster scrolling if the encoder is turned quickly
+        long step = (abs(diff) > 1) ? 500 : 100;
         editCurrent += (diff * step); 
+        
         if(editCurrent < 0) editCurrent = 0;
         if(editCurrent > 120000) editCurrent = 120000;
     }
+    // Handle Global Brightness/Contrast
     else if (uiState == STATE_EDIT_BRIGHTNESS) {
         editCurrent += diff;
         if(editCurrent < 1) editCurrent = 1;
         if(editCurrent > 10) editCurrent = 10;
+        
         globalBrightness = (int)editCurrent;
-        applyBrightness(globalBrightness);
+        applyBrightness(globalBrightness); // Immediate visual feedback
     }
   }
 
@@ -663,12 +700,18 @@ void loop() {
   // --- UI Rendering State Machine ---
   if (uiState == STATE_MENU || uiState == STATE_SUBMENU) {
     topDisplay.clearBuffer();
+    
+    // Header Logic - Replaced the hardcoded strings with our dynamic variable
     topDisplay.setFont(u8g2_font_6x10_tf);
-    topDisplay.drawStr(0, 10, (uiState==STATE_MENU) ? "-- MAIN MENU--" : "-- SUB MENU --");
+    int headerX = getCenterX(topDisplay, currentHeaderName);
+    topDisplay.drawStr(headerX, 10, currentHeaderName.c_str());
+    
+    // Draw a small separator line under the dynamic header
+    topDisplay.drawHLine(0, 12, 128);
     
     for(int i=0; i < currentMenuSize; i++) {
       if (i >= menuScrollOffset && i < menuScrollOffset + VISIBLE_ITEMS) {
-          int y = 25 + ((i - menuScrollOffset) * 12);
+          int y = 28 + ((i - menuScrollOffset) * 12);
           if(i == selectedIndex) {
             topDisplay.setFont(u8g2_font_7x14B_tf); 
             String label = currentMenu[i].name;
