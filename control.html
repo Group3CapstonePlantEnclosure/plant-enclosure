@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual Control</title>
+    <style>
+        :root { 
+            --bg: #0b0f0c; 
+            --card: rgba(255,255,255,0.05); 
+            --text: rgba(255,255,255,0.92); 
+            --muted: rgba(255,255,255,0.6); 
+            --stroke: rgba(255,255,255,0.12); 
+            --radius: 18px; 
+            --accent: #4f99ff; /* Blue accent for control panel */
+        }
+        
+        body { 
+            margin: 0; 
+            background: radial-gradient(1200px 800px at 85% 20%, rgba(79, 153, 255, 0.15), transparent 60%), var(--bg);
+            color: var(--text); 
+            font-family: system-ui, sans-serif; 
+            padding: 30px 20px 60px 20px; 
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .header { 
+            max-width: 600px; 
+            width: 100%;
+            margin: 0 auto 30px auto; 
+            text-align: center; 
+            position: relative;
+        }
+        
+        .back-btn { 
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--muted); 
+            text-decoration: none; 
+            font-size: 14px; 
+            transition: color 0.2s; 
+        }
+        
+        .back-btn:hover { color: white; }
+        
+        h2 { margin: 0; font-weight: 400; font-size: 26px; letter-spacing: 1px; }
+
+        .form-container {
+            width: 100%;
+            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Control Cards */
+        .control-group {
+            background: var(--card);
+            border: 1px solid var(--stroke);
+            border-radius: var(--radius);
+            padding: 24px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        .group-title {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--accent);
+            margin-bottom: 16px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Grid for Inputs */
+        .input-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .input-box {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .input-box label {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .input-box input {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--stroke);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            font-family: monospace;
+        }
+
+        .input-box input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(79, 153, 255, 0.2);
+        }
+
+        /* Action Buttons */
+        .btn {
+            appearance: none; 
+            border: none; 
+            background: rgba(79, 153, 255, 0.2); 
+            border: 1px solid rgba(79, 153, 255, 0.4);
+            color: white; 
+            padding: 16px; 
+            border-radius: 14px; 
+            font-weight: 600; 
+            font-size: 16px; 
+            cursor: pointer; 
+            transition: 0.2s;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .btn:hover { background: rgba(79, 153, 255, 0.3); }
+        .btn:disabled { background: rgba(255,255,255,0.05); color: var(--muted); border-color: var(--stroke); cursor: not-allowed; }
+
+        #statusMsg {
+            text-align: center;
+            font-size: 13px;
+            margin-top: 12px;
+            color: var(--muted);
+            min-height: 20px;
+        }
+        
+        #loadingOverlay {
+            text-align: center;
+            padding: 40px;
+            color: var(--accent);
+            font-weight: bold;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <a href="index.html" class="back-btn">← Home</a>
+        <h2>Control Panel</h2>
+    </div>
+
+    <div class="form-container" id="formWrapper" style="display: none;">
+        
+        <div class="control-group">
+            <div class="group-title">🌡️ Environment Ranges</div>
+            <div class="input-grid">
+                <div class="input-box"><label>Temp Low (°F)</label><input type="number" id="tempLow" step="0.1"></div>
+                <div class="input-box"><label>Temp High (°F)</label><input type="number" id="tempHigh" step="0.1"></div>
+                <div class="input-box"><label>Humidity Low (%)</label><input type="number" id="humLow" step="0.1"></div>
+                <div class="input-box"><label>Humidity High (%)</label><input type="number" id="humHigh" step="0.1"></div>
+                <div class="input-box"><label>Soil Moisture Low</label><input type="number" id="soilLow"></div>
+                <div class="input-box"><label>Soil Moisture High</label><input type="number" id="soilHigh"></div>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <div class="group-title">🌞 Lighting Cycle</div>
+            <div class="input-grid">
+                <div class="input-box"><label>Time ON (Hour 0-23)</label><input type="number" id="timeOnHour" min="0" max="23"></div>
+                <div class="input-box"><label>Time OFF (Hour 0-23)</label><input type="number" id="timeOffHour" min="0" max="23"></div>
+                <div class="input-box" style="grid-column: span 2;">
+                    <label>LUX Threshold (Turn on below this)</label>
+                    <input type="number" id="luxThreshold" step="100">
+                </div>
+            </div>
+        </div>
+
+        <button class="btn" id="sendBtn">📡 Push Settings to Enclosure</button>
+        <div id="statusMsg">Ready to update.</div>
+    </div>
+
+    <div id="loadingOverlay">
+        Connecting to Cloud Database...
+    </div>
+
+    <script>
+        // --- GITHUB CONFIGURATION ---
+        // ⚠️ UPDATE THESE WITH YOUR DETAILS ⚠️
+        const GITHUB_USER = "YOUR_GITHUB_USER";
+        const GITHUB_REPO = "YOUR_REPO_NAME";
+        const GITHUB_TOKEN = "YOUR_GITHUB_TOKEN"; 
+        const FILE_PATH = "settings.json";
+
+        let currentFileSha = ""; // We need this to update the file later
+
+        // UI Elements
+        const formWrapper = document.getElementById("formWrapper");
+        const loadingOverlay = document.getElementById("loadingOverlay");
+        const sendBtn = document.getElementById("sendBtn");
+        const statusMsg = document.getElementById("statusMsg");
+
+        // Input Fields
+        const inputs = {
+            tempLow: document.getElementById("tempLow"),
+            tempHigh: document.getElementById("tempHigh"),
+            humLow: document.getElementById("humLow"),
+            humHigh: document.getElementById("humHigh"),
+            soilLow: document.getElementById("soilLow"),
+            soilHigh: document.getElementById("soilHigh"),
+            timeOnHour: document.getElementById("timeOnHour"),
+            timeOffHour: document.getElementById("timeOffHour"),
+            luxThreshold: document.getElementById("luxThreshold")
+        };
+
+        // --- 1. LOAD CURRENT SETTINGS ON STARTUP ---
+        async function fetchCurrentSettings() {
+            loadingOverlay.style.display = "block";
+            formWrapper.style.display = "none";
+            
+            try {
+                const getUrl = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${FILE_PATH}`;
+                const response = await fetch(getUrl, { 
+                    headers: { "Authorization": `token ${GITHUB_TOKEN}` },
+                    cache: "no-store" // Prevent browser caching old settings
+                });
+                
+                if (!response.ok) throw new Error("Could not fetch file from GitHub.");
+                
+                const data = await response.json();
+                currentFileSha = data.sha; // Save SHA for pushing updates later
+                
+                // Decode the Base64 content from GitHub
+                const jsonText = atob(data.content);
+                const settings = JSON.parse(jsonText);
+
+                // Populate the form fields with the data
+                for (const key in inputs) {
+                    if (settings[key] !== undefined) {
+                        inputs[key].value = settings[key];
+                    }
+                }
+
+                loadingOverlay.style.display = "none";
+                formWrapper.style.display = "flex";
+
+            } catch (err) {
+                console.error(err);
+                loadingOverlay.textContent = "❌ Failed to load settings: " + err.message;
+            }
+        }
+
+        // --- 2. PUSH NEW SETTINGS TO GITHUB ---
+        sendBtn.addEventListener("click", async () => {
+            sendBtn.disabled = true;
+            sendBtn.textContent = "Uploading...";
+            statusMsg.textContent = "Packaging new configuration...";
+
+            try {
+                // Gather data from all inputs into a new object
+                const newSettings = {
+                    tempLow: parseFloat(inputs.tempLow.value),
+                    tempHigh: parseFloat(inputs.tempHigh.value),
+                    humLow: parseFloat(inputs.humLow.value),
+                    humHigh: parseFloat(inputs.humHigh.value),
+                    soilLow: parseInt(inputs.soilLow.value),
+                    soilHigh: parseInt(inputs.soilHigh.value),
+                    timeOnHour: parseInt(inputs.timeOnHour.value),
+                    timeOffHour: parseInt(inputs.timeOffHour.value),
+                    luxThreshold: parseInt(inputs.luxThreshold.value)
+                };
+
+                // Convert to pretty JSON and encode to Base64
+                const newContentText = JSON.stringify(newSettings, null, 2);
+                const encodedContent = btoa(newContentText);
+
+                statusMsg.textContent = "Sending to GitHub...";
+
+                const putUrl = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${FILE_PATH}`;
+                const putResp = await fetch(putUrl, {
+                    method: "PUT",
+                    headers: {
+                        "Authorization": `token ${GITHUB_TOKEN}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        message: "Manual UI update of enclosure settings",
+                        content: encodedContent,
+                        sha: currentFileSha // We must provide the exact SHA we loaded earlier
+                    })
+                });
+
+                if (!putResp.ok) throw new Error("Failed to upload to GitHub.");
+                
+                const putData = await putResp.json();
+                currentFileSha = putData.content.sha; // Update SHA in case user presses save again
+
+                statusMsg.textContent = "✅ Settings successfully updated!";
+                sendBtn.textContent = "Update Successful";
+                sendBtn.style.background = "#2cff8a";
+                sendBtn.style.color = "#000";
+                sendBtn.style.borderColor = "#2cff8a";
+
+                // Reset button visual after 3 seconds
+                setTimeout(() => {
+                    sendBtn.disabled = false;
+                    sendBtn.textContent = "📡 Push Settings to Enclosure";
+                    sendBtn.style.background = "rgba(79, 153, 255, 0.2)";
+                    sendBtn.style.color = "white";
+                    sendBtn.style.borderColor = "rgba(79, 153, 255, 0.4)";
+                }, 3000);
+
+            } catch (err) {
+                console.error(err);
+                statusMsg.textContent = "❌ Error: " + err.message;
+                sendBtn.disabled = false;
+                sendBtn.textContent = "Try Again";
+            }
+        });
+
+        // Start the loading sequence when the page opens
+        fetchCurrentSettings();
+    </script>
+</body>
+</html>
