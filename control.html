@@ -203,18 +203,15 @@
 
       const GITHUB_TOKEN = "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"; 
 
-   
         const FILE_PATH = "settings.json";
 
-        let currentFileSha = ""; // We need this to update the file later
+let currentFileSha = ""; 
 
-        // UI Elements
         const formWrapper = document.getElementById("formWrapper");
         const loadingOverlay = document.getElementById("loadingOverlay");
         const sendBtn = document.getElementById("sendBtn");
         const statusMsg = document.getElementById("statusMsg");
 
-        // Input Fields
         const inputs = {
             tempLow: document.getElementById("tempLow"),
             tempHigh: document.getElementById("tempHigh"),
@@ -228,46 +225,45 @@
         };
 
         // --- 1. LOAD CURRENT SETTINGS ON STARTUP ---
-async function fetchCurrentSettings() {
-    loadingOverlay.style.display = "block";
-    formWrapper.style.display = "none";
-    
-    try {
-        const getUrl = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${FILE_PATH}`;
-        const response = await fetch(getUrl, { 
-            headers: { 
-                "Authorization": `Bearer ${GITHUB_TOKEN}`,
-                "Accept": "application/vnd.github+json"
-            },
-            cache: "no-store" 
-        });
-        
-        if (!response.ok) {
-            const errorBody = await response.json();
-            // This will show you exactly what GitHub's server said
-            throw new Error(`GitHub ${response.status}: ${errorBody.message}`);
-        }
-        
-        const data = await response.json();
-        currentFileSha = data.sha; // Save this for the PUT request later
-        
-        const jsonText = atob(data.content);
-        const settings = JSON.parse(jsonText);
+        async function fetchCurrentSettings() {
+            loadingOverlay.style.display = "block";
+            formWrapper.style.display = "none";
+            
+            try {
+                const getUrl = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${FILE_PATH}`;
+                const response = await fetch(getUrl, { 
+                    headers: { 
+                        "Authorization": `Bearer ${GITHUB_TOKEN}`, // Standard for Fine-grained
+                        "Accept": "application/vnd.github+json"
+                    },
+                    cache: "no-store" 
+                });
+                
+                if (!response.ok) {
+                    const errorBody = await response.json();
+                    throw new Error(`GitHub ${response.status}: ${errorBody.message}`);
+                }
+                
+                const data = await response.json();
+                currentFileSha = data.sha; 
+                
+                const jsonText = atob(data.content);
+                const settings = JSON.parse(jsonText);
 
-        for (const key in inputs) {
-            if (settings[key] !== undefined) {
-                inputs[key].value = settings[key];
+                for (const key in inputs) {
+                    if (settings[key] !== undefined) {
+                        inputs[key].value = settings[key];
+                    }
+                }
+
+                loadingOverlay.style.display = "none";
+                formWrapper.style.display = "flex";
+
+            } catch (err) {
+                console.error(err);
+                loadingOverlay.innerHTML = `❌ Connection Failed<br><small style="color:white">${err.message}</small>`;
             }
         }
-
-        loadingOverlay.style.display = "none";
-        formWrapper.style.display = "flex";
-
-    } catch (err) {
-        console.error(err);
-        loadingOverlay.innerHTML = `❌ Connection Failed<br><small style="color:white">${err.message}</small>`;
-    }
-}
 
         // --- 2. PUSH NEW SETTINGS TO GITHUB ---
         sendBtn.addEventListener("click", async () => {
@@ -276,7 +272,6 @@ async function fetchCurrentSettings() {
             statusMsg.textContent = "Packaging new configuration...";
 
             try {
-                // Gather data from all inputs into a new object
                 const newSettings = {
                     tempLow: parseFloat(inputs.tempLow.value),
                     tempHigh: parseFloat(inputs.tempHigh.value),
@@ -289,7 +284,6 @@ async function fetchCurrentSettings() {
                     luxThreshold: parseInt(inputs.luxThreshold.value)
                 };
 
-                // Convert to pretty JSON and encode to Base64
                 const newContentText = JSON.stringify(newSettings, null, 2);
                 const encodedContent = btoa(newContentText);
 
@@ -299,20 +293,24 @@ async function fetchCurrentSettings() {
                 const putResp = await fetch(putUrl, {
                     method: "PUT",
                     headers: {
-                        "Authorization": `token ${GITHUB_TOKEN}`,
+                        "Authorization": `Bearer ${GITHUB_TOKEN}`, // Changed 'token' to 'Bearer' here too!
+                        "Accept": "application/vnd.github+json",
                         "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
                         message: "Manual UI update of enclosure settings",
                         content: encodedContent,
-                        sha: currentFileSha // We must provide the exact SHA we loaded earlier
+                        sha: currentFileSha 
                     })
                 });
 
-                if (!putResp.ok) throw new Error("Failed to upload to GitHub.");
+                if (!putResp.ok) {
+                    const errorBody = await putResp.json();
+                    throw new Error(`GitHub ${putResp.status}: ${errorBody.message}`);
+                }
                 
                 const putData = await putResp.json();
-                currentFileSha = putData.content.sha; // Update SHA in case user presses save again
+                currentFileSha = putData.content.sha; 
 
                 statusMsg.textContent = "✅ Settings successfully updated!";
                 sendBtn.textContent = "Update Successful";
@@ -320,7 +318,6 @@ async function fetchCurrentSettings() {
                 sendBtn.style.color = "#000";
                 sendBtn.style.borderColor = "#2cff8a";
 
-                // Reset button visual after 3 seconds
                 setTimeout(() => {
                     sendBtn.disabled = false;
                     sendBtn.textContent = "📡 Push Settings to Enclosure";
@@ -337,7 +334,6 @@ async function fetchCurrentSettings() {
             }
         });
 
-        // Start the loading sequence when the page opens
         fetchCurrentSettings();
     </script>
 </body>
