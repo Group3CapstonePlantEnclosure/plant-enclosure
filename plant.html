@@ -26,16 +26,16 @@
       .sectionTitle{ margin: 18px 0 8px; font-weight: 700; }
       .chips{ display:flex; flex-wrap:wrap; gap: 8px; }
       .chip{ padding: 6px 12px; border-radius: 99px; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.08); font-size: 13px; }
-      
+
       .actions{ display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
       .btn{ appearance: none; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.08); color: var(--text); padding: 14px; border-radius: 12px; font-weight: 650; font-size: 14px; cursor: pointer; display:inline-flex; align-items:center; justify-content: center; gap: 8px; text-decoration: none; text-align: center; }
       .btn:hover{ background: rgba(255,255,255,0.15); }
-      
+
       .btnSend { background: rgba(79, 153, 255, 0.2); border-color: rgba(79, 153, 255, 0.4); grid-column: span 2; }
       .btnSend:hover { background: rgba(79, 153, 255, 0.3); }
       .btnBuy { background: rgba(44, 255, 138, 0.16); border-color: rgba(44, 255, 138, 0.28); }
       .btnBuy:hover { background: rgba(44, 255, 138, 0.22); }
-      
+
       .side{ padding: 20px; }
       .side h2{ margin: 0 0 10px; font-size: 18px; }
       .list{ padding-left: 20px; color: rgba(255,255,255,0.85); line-height: 1.6; font-size: 14px; }
@@ -90,9 +90,15 @@
         </div>
       </div>
     </div>
-<script>
 
-      // --- 2. PLANT DATA ---
+    <script>
+      // =========================
+      // OPTION A: WEBSITE -> ESP32
+      // =========================
+      const ESP32_IP = "http://172.19.40.222";   // <<< CHANGE TO YOUR ESP32 IP
+      const ESP32_SETTINGS_PATH = "/settings";   // <<< change if your ESP32 uses a different path
+
+      // --- PLANT DATA ---
       const plants = {
         pothos: {
           name: "Pothos", subtitle: "Epipremnum aureum",
@@ -114,7 +120,7 @@
         },
         monstera: {
           name: "Monstera", subtitle: "Monstera deliciosa",
-          img: "https://images.unsplash.com/photo-1585598117002-9fb152e67dbf?auto=format&fit=crop&w=800&q=80", 
+          img: "https://images.unsplash.com/photo-1585598117002-9fb152e67dbf?auto=format&fit=crop&w=800&q=80",
           display: { temp: "68-86°F", hum: "60-80%", light: "Bright", water: "1-2 Wks" },
           settings: { tempLow: 68.0, tempHigh: 86.0, humLow: 60.0, humHigh: 80.0, soilLow: 40, soilHigh: 70, timeOnHour: 7, timeOffHour: 21, luxThreshold: 20000 },
           tips: ["Needs support", "Mist leaves", "Filter sun"],
@@ -186,66 +192,69 @@
         }
       };
 
-      // --- 3. PAGE LOGIC ---
+      // --- PAGE LOGIC ---
       const params = new URLSearchParams(window.location.search);
       const plantId = (params.get("plant") || "pothos").toLowerCase();
-      const p = plants[plantId] || plants["pothos"];
+      const p = plants[plantId] || plants.pothos;
 
+      // Populate UI
       document.getElementById("plantName").textContent = p.name;
       document.getElementById("plantSubtitle").textContent = p.subtitle;
       document.getElementById("plantImg").src = p.img;
-      
+
       document.getElementById("light").textContent = p.display.light;
       document.getElementById("water").textContent = p.display.water;
       document.getElementById("temp").textContent = p.display.temp;
       document.getElementById("humidity").textContent = p.display.hum;
       document.getElementById("buyBtn").href = p.buyUrl;
 
-      document.getElementById("debugSettings").textContent = `T:${p.settings.tempLow}-${p.settings.tempHigh} H:${p.settings.humLow}-${p.settings.humHigh}`;
+      document.getElementById("debugSettings").textContent =
+        `T:${p.settings.tempLow}-${p.settings.tempHigh} H:${p.settings.humLow}-${p.settings.humHigh}`;
 
       const tipsContainer = document.getElementById("tipsChips");
       p.tips.forEach(t => {
-        const d = document.createElement("div"); d.className="chip"; d.textContent="✨ "+t; tipsContainer.appendChild(d);
+        const d = document.createElement("div");
+        d.className="chip";
+        d.textContent="✨ " + t;
+        tipsContainer.appendChild(d);
       });
+
       const guideContainer = document.getElementById("quickGuide");
       p.guide.forEach(g => {
-        const l = document.createElement("li"); l.textContent=g; guideContainer.appendChild(l);
+        const li = document.createElement("li");
+        li.textContent = g;
+        guideContainer.appendChild(li);
       });
 
-     // --- 4. SEND TO ESP32 LOGIC ---
-const sendBtn = document.getElementById("sendBtn");
-const status = document.getElementById("statusMsg");
+      // --- SEND TO ESP32 LOGIC ---
+      const sendBtn = document.getElementById("sendBtn");
+      const status = document.getElementById("statusMsg");
 
-const ESP32_IP = "http://172.19.40.222"; // 🔥 CHANGE THIS
+      sendBtn.addEventListener("click", async () => {
+        sendBtn.disabled = true;
+        sendBtn.textContent = "Sending...";
+        status.textContent = "Connecting to enclosure...";
 
-sendBtn.addEventListener("click", async () => {
-  sendBtn.disabled = true;
-  sendBtn.textContent = "Sending...";
-  status.textContent = "Connecting to enclosure...";
+        try {
+          const res = await fetch(`${ESP32_IP}${ESP32_SETTINGS_PATH}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(p.settings)
+          });
 
-  try {
-    const res = await fetch(`${ESP32_IP}/settings`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(p.settings)
-    });
+          if (!res.ok) throw new Error("ESP32 not responding");
 
-    if (!res.ok) throw new Error("ESP32 not responding");
-
-    status.textContent = "✅ Sent to enclosure!";
-    sendBtn.textContent = "Sent Successfully";
-    sendBtn.style.background = "#2cff8a";
-    sendBtn.style.color = "#000";
-
-  } catch (err) {
-    console.error(err);
-    status.textContent = "❌ Failed to connect";
-    sendBtn.textContent = "Retry";
-    sendBtn.disabled = false;
-  }
-});
-</script>
+          status.textContent = "✅ Sent to enclosure!";
+          sendBtn.textContent = "Sent Successfully";
+          sendBtn.style.background = "#2cff8a";
+          sendBtn.style.color = "#000";
+        } catch (err) {
+          console.error(err);
+          status.textContent = "❌ Failed to connect";
+          sendBtn.textContent = "Retry";
+          sendBtn.disabled = false;
+        }
+      });
+    </script>
   </body>
 </html>
