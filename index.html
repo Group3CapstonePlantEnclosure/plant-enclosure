@@ -13,165 +13,64 @@
             --radius: 24px; 
             --plant-glow: rgba(44, 255, 138, 0.15);
             --control-glow: rgba(79, 153, 255, 0.15);
+            --monitor-glow: rgba(255, 184, 79, 0.15);
         }
         
         body { 
-            margin: 0; 
-            background: var(--bg); 
-            color: var(--text); 
-            font-family: system-ui, sans-serif; 
-            padding: 40px 20px 60px 20px; 
-            overflow-x: hidden; 
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
+            margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; 
+            padding: 40px 20px 60px 20px; overflow-x: hidden; min-height: 100vh;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
         }
 
-        .header { 
-            max-width: 600px; 
-            width: 100%;
-            margin: 0 auto 40px auto; 
-            text-align: center; 
-        }
-        
-        h1 { 
-            margin: 0; 
-            font-weight: 300; 
-            font-size: 36px; 
-            letter-spacing: 2px; 
-        }
-        
-        .subtitle {
-            color: var(--muted);
-            margin-top: 10px;
-            font-size: 16px;
-        }
+        .header { text-align: center; margin-bottom: 40px; }
+        .header h1 { margin: 0; font-weight: 300; font-size: 34px; letter-spacing: -0.5px; }
+        .header span { font-weight: 700; color: #fff; }
+        .header p { color: var(--muted); margin-top: 8px; font-size: 15px; }
 
-        .list-container { 
-            display: flex; 
-            flex-direction: column; 
-            gap: 25px; 
-            max-width: 600px; 
-            width: 100%;
-            margin: 0 auto; 
-        }
-        
-        /* --- MAIN MENU CARDS --- */
+        .menu-container { display: flex; flex-direction: column; gap: 20px; width: 100%; max-width: 500px; }
+
         .main-card {
-            position: relative; 
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            min-height: 160px; 
-            border-radius: var(--radius); 
-            text-decoration: none; 
-            color: white;
-            padding: 30px 40px;
-            box-sizing: border-box;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
-            
-            /* Initial Animation State */
-            opacity: 0; 
-            transform: translateY(60px) scale(0.9);
-            transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), 
-                        transform 0.7s cubic-bezier(0.16, 1, 0.3, 1), 
-                        border-color 0.3s ease, box-shadow 0.3s ease;
-            
-            border: 1px solid rgba(255,255,255,0.08); 
-            backdrop-filter: blur(12px);
+            background: var(--card-bg); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius);
+            padding: 24px; display: flex; align-items: center; justify-content: space-between;
+            text-decoration: none; color: var(--text); transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+            position: relative; overflow: hidden; opacity: 0; transform: translateY(20px);
         }
 
-        .main-card.show { 
-            opacity: 1; 
-            transform: translateY(0) scale(1); 
-        }
-        
-        /* AMBIENT LIGHTING BACKGROUNDS */
-        .card-plant {
-            background: radial-gradient(circle at 85% 50%, var(--plant-glow), transparent 50%), var(--card-bg);
-        }
-        .card-control {
-            background: radial-gradient(circle at 85% 50%, var(--control-glow), transparent 50%), var(--card-bg);
-        }
+        .main-card.show { opacity: 1; transform: translateY(0); }
+        .main-card:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.06); }
+        .card-plant:hover { box-shadow: 0 10px 40px var(--plant-glow); }
+        .card-control:hover { box-shadow: 0 10px 40px var(--control-glow); }
+        .card-monitor:hover { box-shadow: 0 10px 40px var(--monitor-glow); }
 
-        /* Hover Effects */
-        .card-plant:hover { border-color: rgba(44, 255, 138, 0.3); box-shadow: 0 20px 50px rgba(44, 255, 138, 0.05); }
-        .card-control:hover { border-color: rgba(79, 153, 255, 0.3); box-shadow: 0 20px 50px rgba(79, 153, 255, 0.05); }
+        .content-left { z-index: 2; }
+        .name { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+        .desc { font-size: 14px; color: var(--muted); line-height: 1.4; max-width: 280px; }
+        .metric { display: inline-block; margin-top: 14px; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 99px; background: rgba(255,255,255,0.1); }
         
-        /* Layout for Text (Left) and Icon (Right) */
-        .content-left {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            max-width: 65%;
-            z-index: 2;
-        }
-
-        .icon-right {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 2;
-        }
-
-        /* Image styling for the Freepik PNGs */
-        .icon-right img {
-            width: 80px;
-            height: 80px;
-            object-fit: contain;
-            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-            filter: drop-shadow(0px 4px 10px rgba(0,0,0,0.4));
-        }
-        
-        /* Animate the PNGs on card hover */
-        .main-card:hover .icon-right img { 
-            transform: scale(1.1) rotate(2deg); 
-        }
-        
-        .name { 
-            font-size: 26px; 
-            font-weight: 700; 
-            margin-bottom: 8px; 
-            letter-spacing: -0.5px; 
-        }
-        
-        .desc { 
-            font-size: 14px; 
-            color: var(--muted); 
-            line-height: 1.5;
-        }
-        
-        .metric { 
-            display: inline-flex; 
-            align-items: center;
-            gap: 6px;
-            margin-top: 18px; 
-            font-size: 12px; 
-            font-weight: 600;
-            background: rgba(255,255,255,0.05); 
-            padding: 6px 12px; 
-            border-radius: 8px; 
-            border: 1px solid rgba(255,255,255,0.1); 
-            width: fit-content; 
-        }
-        
-        @media (max-width: 520px) {
-            .main-card { padding: 25px 20px; }
-            .content-left { max-width: 60%; }
-            .icon-right img { width: 60px; height: 60px; }
-            .name { font-size: 22px; }
-        }
+        .icon-right { width: 64px; height: 64px; opacity: 0.8; z-index: 2; transition: transform 0.3s; }
+        .icon-right img { width: 100%; height: 100%; object-fit: contain; filter: invert(1); }
+        .main-card:hover .icon-right { transform: scale(1.1) rotate(5deg); opacity: 1; }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>GARDEN OS</h1>
-        <div class="subtitle">Select an operation mode</div>
+        <h1>Smart <span>Enclosure</span></h1>
+        <p>Garden OS Main Menu</p>
     </div>
 
-    <div class="list-container">
+    <div class="menu-container">
+        
+        <a href="monitor.html" class="main-card card-monitor">
+            <div class="content-left">
+                <div class="name">Live Monitor</div>
+                <div class="desc">View current system settings and sensor data.</div>
+                <div class="metric">📊 View Dashboard</div>
+            </div>
+            <div class="icon-right">
+                <img src="https://cdn-icons-png.freepik.com/512/8653/8653140.png" alt="Monitor Icon">
+            </div>
+        </a>
+
         <a href="list.html" class="main-card card-plant">
             <div class="content-left">
                 <div class="name">Plant Database</div>
@@ -183,7 +82,7 @@
             </div>
         </a>
 
-<a href="control.html" class="main-card card-control">
+        <a href="control.html" class="main-card card-control">
             <div class="content-left">
                 <div class="name">Manual Control</div>
                 <div class="desc">Directly adjust temperature, humidity, and lighting thresholds.</div>
@@ -196,17 +95,19 @@
     </div>
 
     <script>
-        const observerOptions = { root: null, rootMargin: '0px', threshold: 0.15 };
-        const observer = new IntersectionObserver((entries, observer) => {
+        const observer = new IntersectionObserver((entries, obs) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
                     entry.target.classList.add('show');
-                    observer.unobserve(entry.target);
+                    obs.unobserve(entry.target);
                 }
             });
-        }, observerOptions);
+        }, { threshold: 0.1 });
         
-        document.querySelectorAll('.main-card').forEach(card => observer.observe(card));
+        document.querySelectorAll('.main-card').forEach((card, index) => {
+            card.style.transitionDelay = `${index * 0.1}s`;
+            observer.observe(card);
+        });
     </script>
 </body>
 </html>

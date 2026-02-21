@@ -86,8 +86,9 @@
     </div>
 
     <script>
-      const FIREBASE_URL = "https://plant-enclosure-default-rtdb.firebaseio.com/settings.json"; 
-      
+      // --- FIREBASE URL ---
+      const FIREBASE_URL = ""https://plant-enclosure-default-rtdb.firebaseio.com/settings.json";"; 
+
       let ESP32_IP = localStorage.getItem("esp32_ip") || "";
       if (ESP32_IP && !ESP32_IP.startsWith("http")) ESP32_IP = "http://" + ESP32_IP;
       const ESP32_SETTINGS_PATH = "/settings"; 
@@ -130,8 +131,16 @@
       const status = document.getElementById("statusMsg");
 
       sendBtn.addEventListener("click", async () => {
-        if (!ESP32_IP) { alert("⚠️ No ESP32 IP address found! Please go to the Control Panel to enter your device's IP Address first."); window.location.href = "control.html"; return; }
-        if (FIREBASE_URL.includes("YOUR_PROJECT_ID")) { alert("⚠️ Please put your Firebase URL in the plant.html code before pushing!"); return; }
+        // PROMPT FIX: If IP is missing, ask the user directly on this page!
+        if (!ESP32_IP || ESP32_IP === "http://") { 
+            let manualIp = prompt("Please enter your ESP32 IP Address (e.g. 192.168.1.100):");
+            if (manualIp) {
+                localStorage.setItem("esp32_ip", manualIp);
+                ESP32_IP = manualIp.startsWith("http") ? manualIp : "http://" + manualIp;
+            } else {
+                return; // User canceled
+            }
+        }
 
         sendBtn.disabled = true; sendBtn.textContent = "Sending..."; status.textContent = "Updating hardware...";
 

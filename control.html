@@ -10,18 +10,28 @@
         .header { max-width: 600px; width: 100%; margin: 0 auto 30px auto; text-align: center; position: relative; }
         .back-btn { position: absolute; left: 0; top: 50%; transform: translateY(-50%); color: var(--muted); text-decoration: none; font-size: 14px; transition: color 0.2s; }
         .back-btn:hover { color: white; }
-        h2 { margin: 0; font-weight: 400; font-size: 26px; letter-spacing: 1px; }
+        h2 { margin: 0; font-weight: 400; font-size: 26px; }
+
         .form-container { width: 100%; max-width: 600px; display: flex; flex-direction: column; gap: 20px; }
-        .control-group { background: var(--card); border: 1px solid var(--stroke); border-radius: var(--radius); padding: 24px; backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
-        .group-title { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); margin-bottom: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
-        .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-        .input-box { display: flex; flex-direction: column; gap: 6px; }
+        .control-group { background: var(--card); border: 1px solid var(--stroke); border-radius: var(--radius); padding: 24px; backdrop-filter: blur(10px); }
+        .group-title { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); margin-bottom: 24px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+
+        .input-box { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
         .input-box label { font-size: 12px; color: var(--muted); }
-        .input-box input { background: rgba(0,0,0,0.3); border: 1px solid var(--stroke); color: white; padding: 12px 16px; border-radius: 12px; font-size: 16px; font-weight: 600; outline: none; transition: border-color 0.2s, box-shadow 0.2s; font-family: monospace; }
-        .input-box input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(79, 153, 255, 0.2); }
-        .btn { appearance: none; border: none; background: rgba(79, 153, 255, 0.2); border: 1px solid rgba(79, 153, 255, 0.4); color: white; padding: 16px; border-radius: 14px; font-weight: 600; font-size: 16px; cursor: pointer; transition: 0.2s; width: 100%; margin-top: 10px; }
+        .input-box input[type="text"] { background: rgba(0,0,0,0.3); border: 1px solid var(--stroke); color: white; padding: 12px; border-radius: 12px; font-size: 16px; outline: none; transition: 0.2s; }
+        
+        /* Dual Slider CSS */
+        .slider-container { margin-bottom: 24px; }
+        .slider-labels { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 12px; color: var(--text); }
+        .slider-labels span.val { font-weight: bold; color: var(--accent); }
+        
+        .dual-slider { position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 10px; }
+        .slider-track { position: absolute; height: 100%; background: var(--accent); border-radius: 3px; z-index: 1; }
+        .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; pointer-events: none; top: -6px; z-index: 2; margin: 0; }
+        .dual-slider input[type="range"]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 18px; height: 18px; background: white; border-radius: 50%; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
+
+        .btn { appearance: none; border: none; background: rgba(79, 153, 255, 0.2); border: 1px solid rgba(79, 153, 255, 0.4); color: white; padding: 16px; border-radius: 14px; font-weight: 600; font-size: 16px; cursor: pointer; transition: 0.2s; width: 100%; }
         .btn:hover { background: rgba(79, 153, 255, 0.3); }
-        .btn:disabled { background: rgba(255,255,255,0.05); color: var(--muted); border-color: var(--stroke); cursor: not-allowed; }
         #statusMsg { text-align: center; font-size: 13px; margin-top: 12px; color: var(--muted); min-height: 20px; }
         #loadingOverlay { text-align: center; padding: 40px; color: var(--accent); font-weight: bold; display: none; }
     </style>
@@ -33,52 +43,81 @@
         <h2>Control Panel</h2>
     </div>
 
+    <div id="loadingOverlay">Connecting to Cloud Database...</div>
+
     <div class="form-container" id="formWrapper" style="display: none;">
+        
         <div class="control-group">
             <div class="group-title">🔌 Device Connection</div>
-            <div class="input-grid">
-                <div class="input-box" style="grid-column: span 2;">
-                    <label>ESP32 IP Address</label>
-                    <input type="text" id="espIp" placeholder="e.g. 192.168.1.100">
-                </div>
+            <div class="input-box">
+                <label>ESP32 IP Address</label>
+                <input type="text" id="espIp" placeholder="e.g. 192.168.1.100">
             </div>
         </div>
+
         <div class="control-group">
             <div class="group-title">🌡️ Environment Ranges</div>
-            <div class="input-grid">
-                <div class="input-box"><label>Temp Low (°F)</label><input type="number" id="tempLow" step="0.1"></div>
-                <div class="input-box"><label>Temp High (°F)</label><input type="number" id="tempHigh" step="0.1"></div>
-                <div class="input-box"><label>Humidity Low (%)</label><input type="number" id="humLow" step="0.1"></div>
-                <div class="input-box"><label>Humidity High (%)</label><input type="number" id="humHigh" step="0.1"></div>
-                <div class="input-box"><label>Soil Moisture Low</label><input type="number" id="soilLow"></div>
-                <div class="input-box"><label>Soil Moisture High</label><input type="number" id="soilHigh"></div>
+            
+            <div class="slider-container">
+                <div class="slider-labels"><span>Temperature</span> <span class="val" id="tempVal">65°F - 85°F</span></div>
+                <div class="dual-slider">
+                    <div class="slider-track" id="tempTrack"></div>
+                    <input type="range" id="tempLow" min="40" max="100" value="65" step="1" oninput="updateSliders('temp')">
+                    <input type="range" id="tempHigh" min="40" max="100" value="85" step="1" oninput="updateSliders('temp')">
+                </div>
             </div>
-        </div>
-        <div class="control-group">
-            <div class="group-title">🌞 Lighting Cycle</div>
-            <div class="input-grid">
-                <div class="input-box"><label>Time ON (Hour 0-23)</label><input type="number" id="timeOnHour" min="0" max="23"></div>
-                <div class="input-box"><label>Time OFF (Hour 0-23)</label><input type="number" id="timeOffHour" min="0" max="23"></div>
-                <div class="input-box" style="grid-column: span 2;">
-                    <label>LUX Threshold (Turn on below this)</label>
-                    <input type="number" id="luxThreshold" step="100">
+
+            <div class="slider-container">
+                <div class="slider-labels"><span>Humidity</span> <span class="val" id="humVal">40% - 60%</span></div>
+                <div class="dual-slider">
+                    <div class="slider-track" id="humTrack"></div>
+                    <input type="range" id="humLow" min="0" max="100" value="40" step="1" oninput="updateSliders('hum')">
+                    <input type="range" id="humHigh" min="0" max="100" value="60" step="1" oninput="updateSliders('hum')">
+                </div>
+            </div>
+
+            <div class="slider-container">
+                <div class="slider-labels"><span>Soil Moisture</span> <span class="val" id="soilVal">20% - 50%</span></div>
+                <div class="dual-slider">
+                    <div class="slider-track" id="soilTrack"></div>
+                    <input type="range" id="soilLow" min="0" max="100" value="20" step="1" oninput="updateSliders('soil')">
+                    <input type="range" id="soilHigh" min="0" max="100" value="50" step="1" oninput="updateSliders('soil')">
                 </div>
             </div>
         </div>
-        <button class="btn" id="sendBtn">📡 Push Settings to Enclosure</button>
+
+        <div class="control-group">
+            <div class="group-title">🌞 Lighting Cycle</div>
+            
+            <div class="slider-container">
+                <div class="slider-labels"><span>Turn On Time</span> <span class="val" id="onVal">08:00</span></div>
+                <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
+                    <input type="range" id="timeOnHour" min="0" max="23" value="8" oninput="updateSingles()">
+                </div>
+            </div>
+
+            <div class="slider-container">
+                <div class="slider-labels"><span>Turn Off Time</span> <span class="val" id="offVal">20:00</span></div>
+                <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
+                    <input type="range" id="timeOffHour" min="0" max="23" value="20" oninput="updateSingles()">
+                </div>
+            </div>
+
+            <div class="slider-container">
+                <div class="slider-labels"><span>Lux Threshold</span> <span class="val" id="luxVal">30000 lux</span></div>
+                <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
+                    <input type="range" id="luxThreshold" min="0" max="100000" step="1000" value="30000" oninput="updateSingles()">
+                </div>
+            </div>
+        </div>
+
+        <button class="btn" id="sendBtn">📡 Push Settings</button>
         <div id="statusMsg">Ready to update.</div>
     </div>
 
-    <div id="loadingOverlay">Connecting to Cloud Database...</div>
-
     <script>
-        // --- FIREBASE CONFIGURATION ---
-        const FIREBASE_URL = "https://plant-enclosure-default-rtdb.firebaseio.com/settings.json"; 
-
-        const formWrapper = document.getElementById("formWrapper");
-        const loadingOverlay = document.getElementById("loadingOverlay");
-        const sendBtn = document.getElementById("sendBtn");
-        const statusMsg = document.getElementById("statusMsg");
+        // FIREBASE URL
+        const FIREBASE_URL = ""https://plant-enclosure-default-rtdb.firebaseio.com/settings.json";"; 
 
         const inputs = {
             espIp: document.getElementById("espIp"), tempLow: document.getElementById("tempLow"), tempHigh: document.getElementById("tempHigh"),
@@ -89,13 +128,39 @@
         const savedIp = localStorage.getItem("esp32_ip");
         if (savedIp) inputs.espIp.value = savedIp;
 
-        async function fetchCurrentSettings() {
-            if(FIREBASE_URL.includes("YOUR_PROJECT_ID")) {
-                loadingOverlay.style.display = "block";
-                loadingOverlay.innerHTML = "❌ Please update the FIREBASE_URL in the code first!"; return;
-            }
-            loadingOverlay.style.display = "block"; formWrapper.style.display = "none";
+        // UI Logic for Dual Sliders
+        function updateSliders(type) {
+            const low = document.getElementById(type + "Low");
+            const high = document.getElementById(type + "High");
+            const track = document.getElementById(type + "Track");
+            const label = document.getElementById(type + "Val");
+            const suffix = type === 'temp' ? '°F' : '%';
+
+            let minV = parseInt(low.value);
+            let maxV = parseInt(high.value);
+
+            if (minV >= maxV) { low.value = maxV - 1; minV = maxV - 1; }
+
+            const minBound = parseInt(low.min);
+            const maxBound = parseInt(low.max);
             
+            const percent1 = ((minV - minBound) / (maxBound - minBound)) * 100;
+            const percent2 = ((maxV - minBound) / (maxBound - minBound)) * 100;
+
+            track.style.left = percent1 + "%";
+            track.style.width = (percent2 - percent1) + "%";
+            label.textContent = `${minV}${suffix} - ${maxV}${suffix}`;
+        }
+
+        // UI Logic for Single Sliders
+        function updateSingles() {
+            document.getElementById("onVal").textContent = document.getElementById("timeOnHour").value.padStart(2, '0') + ":00";
+            document.getElementById("offVal").textContent = document.getElementById("timeOffHour").value.padStart(2, '0') + ":00";
+            document.getElementById("luxVal").textContent = document.getElementById("luxThreshold").value + " lux";
+        }
+
+        async function fetchCurrentSettings() {
+            document.getElementById("loadingOverlay").style.display = "block";
             try {
                 const response = await fetch(FIREBASE_URL, { cache: "no-store" });
                 if (!response.ok) throw new Error("Could not connect to Firebase");
@@ -105,17 +170,23 @@
                         if (inputs[key] !== undefined) inputs[key].value = settings[key];
                     }
                 }
-                loadingOverlay.style.display = "none"; formWrapper.style.display = "flex";
+                // Trigger UI updates to paint the tracks
+                updateSliders('temp'); updateSliders('hum'); updateSliders('soil'); updateSingles();
+                
+                document.getElementById("loadingOverlay").style.display = "none"; 
+                document.getElementById("formWrapper").style.display = "flex";
             } catch (err) {
-                console.error(err);
-                loadingOverlay.innerHTML = `❌ Connection Failed<br><small style="color:white">${err.message}</small>`;
+                document.getElementById("loadingOverlay").innerHTML = `❌ Connection Failed<br><small style="color:white">${err.message}</small>`;
             }
         }
 
-        sendBtn.addEventListener("click", async () => {
+        document.getElementById("sendBtn").addEventListener("click", async () => {
             let targetIp = inputs.espIp.value.trim();
-            if (!targetIp) { alert("Please enter the ESP32 IP Address first!"); inputs.espIp.focus(); return; }
+            if (!targetIp) { alert("Please enter the ESP32 IP Address!"); inputs.espIp.focus(); return; }
             if (!targetIp.startsWith("http")) targetIp = "http://" + targetIp;
+
+            const sendBtn = document.getElementById("sendBtn");
+            const statusMsg = document.getElementById("statusMsg");
 
             sendBtn.disabled = true; sendBtn.textContent = "Uploading...";
             localStorage.setItem("esp32_ip", inputs.espIp.value.trim());
@@ -129,14 +200,12 @@
                     luxThreshold: parseInt(inputs.luxThreshold.value)
                 };
 
-                // STEP 1: PUSH DIRECTLY TO ESP32
                 statusMsg.textContent = "Pushing to ESP32...";
                 const espRes = await fetch(`${targetIp}/settings`, {
                     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newSettings)
                 });
-                if (!espRes.ok) throw new Error("ESP32 refused connection. Check IP.");
+                if (!espRes.ok) throw new Error("ESP32 refused connection.");
 
-                // STEP 2: SYNC TO FIREBASE
                 statusMsg.textContent = "ESP32 Updated! Syncing to Cloud...";
                 const putResp = await fetch(FIREBASE_URL, {
                     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newSettings)
@@ -144,14 +213,12 @@
                 if (!putResp.ok) throw new Error("Firebase Sync Failed");
 
                 statusMsg.textContent = "✅ Enclosure & Cloud successfully updated!";
-                sendBtn.textContent = "Update Successful"; sendBtn.style.background = "#2cff8a"; sendBtn.style.color = "#000"; sendBtn.style.borderColor = "#2cff8a";
-
+                sendBtn.textContent = "Update Successful"; sendBtn.style.background = "#2cff8a"; sendBtn.style.color = "#000"; 
                 setTimeout(() => {
-                    sendBtn.disabled = false; sendBtn.textContent = "📡 Push Settings to Enclosure";
-                    sendBtn.style.background = "rgba(79, 153, 255, 0.2)"; sendBtn.style.color = "white"; sendBtn.style.borderColor = "rgba(79, 153, 255, 0.4)";
+                    sendBtn.disabled = false; sendBtn.textContent = "📡 Push Settings";
+                    sendBtn.style.background = "rgba(79, 153, 255, 0.2)"; sendBtn.style.color = "white"; 
                 }, 3000);
             } catch (err) {
-                console.error(err);
                 statusMsg.innerHTML = `❌ Error: ${err.message}`;
                 sendBtn.disabled = false; sendBtn.textContent = "Try Again";
             }
