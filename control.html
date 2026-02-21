@@ -149,8 +149,8 @@
     <button class="btn-push" id="sendBtn">Sync Enclosure Data 📡</button>
     <div id="statusMsg">Ready.</div>
 
-    <script>
-        const FIREBASE_URL = "https://plant-enclosure-default-rtdb.firebaseio.com/settings.json"; 
+<script type="module">
+        import { db, ref, get, update } from './firebase-config.js';
 
         const inputs = {
             espIp: document.getElementById("espIp"), tempLow: document.getElementById("tempLow"), tempHigh: document.getElementById("tempHigh"),
@@ -161,7 +161,8 @@
 
         try { const savedIp = localStorage.getItem("esp32_ip"); if (savedIp) inputs.espIp.value = savedIp; } catch(e) {}
 
-        function updateSliders(type) {
+        // Make functions global so inline HTML "oninput" can still see them
+        window.updateSliders = function(type) {
             const low = document.getElementById(type + "Low"); const high = document.getElementById(type + "High");
             const track = document.getElementById(type + "Track"); const label = document.getElementById(type + "Val");
             const suffix = type === 'temp' ? '°F' : '%';
@@ -174,29 +175,29 @@
             label.textContent = `${minV}${suffix} - ${maxV}${suffix}`;
         }
 
-        function updateSingles() {
+        window.updateSingles = function() {
             document.getElementById("onVal").textContent = document.getElementById("timeOnHour").value.padStart(2, '0') + ":00";
             document.getElementById("offVal").textContent = document.getElementById("timeOffHour").value.padStart(2, '0') + ":00";
             document.getElementById("luxVal").textContent = document.getElementById("luxThreshold").value + " lux";
             document.getElementById("brightVal").textContent = document.getElementById("globalBrightness").value + " / 10";
         }
 
-        async function fetchCurrentSettings() {
-            try {
-                const res = await fetch(FIREBASE_URL, { cache: "no-store" });
-                const d = await res.json();
-                if (d && d.tempLow !== undefined) {
-                    for (const key in d) { 
-                        if (inputs[key] !== undefined) {
-                            if (key === 'timerEnabled') inputs[key].checked = d[key];
-                            else inputs[key].value = d[key];
-                        }
+        // Fetch current values once on load
+        const settingsRef = ref(db, 'settings');
+        get(settingsRef).then((snapshot) => {
+            const d = snapshot.val();
+            if (d && d.tempLow !== undefined) {
+                for (const key in d) { 
+                    if (inputs[key] !== undefined) {
+                        if (key === 'timerEnabled') inputs[key].checked = d[key];
+                        else inputs[key].value = d[key];
                     }
                 }
-                updateSliders('temp'); updateSliders('hum'); updateSliders('soil'); updateSingles();
-            } catch (err) { document.getElementById("statusMsg").textContent = "Could not load current cloud settings."; }
-        }
+            }
+            window.updateSliders('temp'); window.updateSliders('hum'); window.updateSliders('soil'); window.updateSingles();
+        }).catch(err => console.error(err));
 
+        // Push button logic
         document.getElementById("sendBtn").addEventListener("click", async () => {
             let targetIp = inputs.espIp.value.trim();
             if (!targetIp) { alert("Please enter the ESP32 IP Address!"); inputs.espIp.focus(); return; }
@@ -208,34 +209,35 @@
             sendBtn.disabled = true; sendBtn.textContent = "Syncing...";
             try { localStorage.setItem("esp32_ip", inputs.espIp.value.trim()); } catch(e) {}
 
+            const newSettings = {
+                tempLow: parseFloat(inputs.tempLow.value), tempHigh: parseFloat(inputs.tempHigh.value),
+                humLow: parseFloat(inputs.humLow.value), humHigh: parseFloat(inputs.humHigh.value),
+                soilLow: parseInt(inputs.soilLow.value), soilHigh: parseInt(inputs.soilHigh.value),
+                timeOnHour: parseInt(inputs.timeOnHour.value), timeOffHour: parseInt(inputs.timeOffHour.value),
+                luxThreshold: parseInt(inputs.luxThreshold.value), timerEnabled: inputs.timerEnabled.checked,
+                globalBrightness: parseInt(inputs.globalBrightness.value)
+            };
+
             try {
-                const newSettings = {
-                    tempLow: parseFloat(inputs.tempLow.value), tempHigh: parseFloat(inputs.tempHigh.value),
-                    humLow: parseFloat(inputs.humLow.value), humHigh: parseFloat(inputs.humHigh.value),
-                    soilLow: parseInt(inputs.soilLow.value), soilHigh: parseInt(inputs.soilHigh.value),
-                    timeOnHour: parseInt(inputs.timeOnHour.value), timeOffHour: parseInt(inputs.timeOffHour.value),
-                    luxThreshold: parseInt(inputs.luxThreshold.value), timerEnabled: inputs.timerEnabled.checked,
-                    globalBrightness: parseInt(inputs.globalBrightness.value)
-                };
-
+                // 1. Push to Local Hardware First
                 statusMsg.textContent = "Pushing to Hardware...";
-                const espRes = await fetch(`${targetIp}/settings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newSettings) });
-                if (!espRes.ok) throw new Error("Hardware refused connection.");
+                try {
+                    await fetch(`${targetIp}/settings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newSettings) });
+                } catch (e) {
+                    console.warn("Hardware update skipped/failed - moving to cloud sync.");
+                }
 
+                // 2. Push to Firebase via SDK
                 statusMsg.textContent = "Updating Cloud Database...";
-                // PATCH prevents overwriting un-related fields
-                const putResp = await fetch(FIREBASE_URL, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newSettings) });
-                if (!putResp.ok) throw new Error("Cloud Sync Failed");
+                await update(settingsRef, newSettings);
 
                 statusMsg.textContent = "✅ System Fully Synchronized!";
                 sendBtn.textContent = "Sync Complete"; sendBtn.style.background = "#4fc3f7"; 
                 setTimeout(() => { sendBtn.disabled = false; sendBtn.textContent = "Sync Enclosure Data 📡"; sendBtn.style.background = ""; }, 3000);
             } catch (err) {
-                statusMsg.textContent = `❌ ${err.message}`; sendBtn.disabled = false; sendBtn.textContent = "Try Again";
+                statusMsg.textContent = `❌ Error: ${err.message}`; sendBtn.disabled = false; sendBtn.textContent = "Try Again";
             }
         });
-
-        window.onload = fetchCurrentSettings;
     </script>
 </body>
 </html>

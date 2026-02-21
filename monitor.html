@@ -87,42 +87,42 @@
         <a href="list.html" class="btn">🌿 Browse Plants</a>
     </div>
 
-    <script>
-        const FIREBASE_URL = "https://plant-enclosure-default-rtdb.firebaseio.com/settings.json"; 
+   <script type="module">
+        // Import our Firebase setup
+        import { db, ref, onValue } from './firebase-config.js';
 
-        async function fetchSettings() {
-            try {
-                const res = await fetch(FIREBASE_URL, { cache: "no-store" });
-                if (!res.ok) return;
-                const data = await res.json();
+        const settingsRef = ref(db, 'settings');
+
+        // This listener fires automatically the moment the page loads, 
+        // AND instantly whenever the database changes!
+        onValue(settingsRef, (snapshot) => {
+            const data = snapshot.val();
+            if (data && data.tempLow !== undefined) {
+                document.getElementById("dispTemp").textContent = `${data.tempLow}°F - ${data.tempHigh}°F`;
+                document.getElementById("dispHum").textContent = `${data.humLow}% - ${data.humHigh}%`;
+                document.getElementById("dispSoil").textContent = `${data.soilLow}% - ${data.soilHigh}%`;
+                document.getElementById("dispLux").textContent = `${data.luxThreshold} lux`;
+                document.getElementById("dispBright").textContent = `${data.globalBrightness || 10}/10`;
                 
-                if (data && data.tempLow !== undefined) {
-                    document.getElementById("dispTemp").textContent = `${data.tempLow}°F - ${data.tempHigh}°F`;
-                    document.getElementById("dispHum").textContent = `${data.humLow}% - ${data.humHigh}%`;
-                    document.getElementById("dispSoil").textContent = `${data.soilLow}% - ${data.soilHigh}%`;
-                    document.getElementById("dispLux").textContent = `${data.luxThreshold} lux`;
-                    document.getElementById("dispBright").textContent = `${data.globalBrightness || 10}/10`;
-                    
-                    let onH = data.timeOnHour.toString().padStart(2, '0');
-                    let offH = data.timeOffHour.toString().padStart(2, '0');
-                    document.getElementById("dispTime").textContent = `${onH}:00 to ${offH}:00`;
-                    
-                    const tState = document.getElementById("dispTimerState");
-                    tState.textContent = data.timerEnabled ? "Timer Active" : "Timer Disabled";
-                    tState.style.color = data.timerEnabled ? "#2cff8a" : "var(--muted)";
-                    
-                    document.getElementById("loading").style.display = "none";
-                    document.getElementById("dashboard").style.display = "grid";
-                    document.getElementById("actions").style.display = "grid";
-                    document.getElementById("liveTag").style.display = "flex";
-                }
-            } catch (err) {
-                console.error("Polling error", err);
+                let onH = data.timeOnHour.toString().padStart(2, '0');
+                let offH = data.timeOffHour.toString().padStart(2, '0');
+                document.getElementById("dispTime").textContent = `${onH}:00 to ${offH}:00`;
+                
+                const tState = document.getElementById("dispTimerState");
+                tState.textContent = data.timerEnabled ? "Timer Active" : "Timer Disabled";
+                tState.style.color = data.timerEnabled ? "#2cff8a" : "var(--muted)";
+                
+                document.getElementById("loading").style.display = "none";
+                document.getElementById("dashboard").style.display = "grid";
+                document.getElementById("actions").style.display = "grid";
+                document.getElementById("liveTag").style.display = "flex";
+            } else {
+                document.getElementById("loading").innerHTML = "Database is currently empty. Push settings first!";
             }
-        }
-
-        fetchSettings(); // Run instantly
-        setInterval(fetchSettings, 3000); // Check for hardware updates every 3 seconds
+        }, (error) => {
+            console.error("Firebase Read Error:", error);
+            document.getElementById("loading").innerHTML = "❌ Could not reach Cloud Database.";
+        });
     </script>
 </body>
 </html>
