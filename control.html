@@ -6,7 +6,7 @@
     <title>Manual Control</title>
     <style>
         :root { --bg: #0b0f0c; --text: rgba(255,255,255,0.92); --muted: rgba(255,255,255,0.6); --radius: 20px; 
-                --c-temp: #ff6b6b; --c-water: #4fc3f7; --c-light: #ffeb3b; --c-sys: #ba68c8; }
+                --c-temp: #ff6b6b; --c-water: #4fc3f7; --c-light: #ffeb3b; --c-sys: #ba68c8; --c-term: #00ff41; }
         body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; padding: 30px 20px 80px 20px; display: flex; flex-direction: column; align-items: center; }
         
         .header { max-width: 600px; width: 100%; margin: 0 auto 30px auto; text-align: center; position: relative; }
@@ -15,17 +15,18 @@
 
         .form-container { width: 100%; max-width: 600px; display: flex; flex-direction: column; gap: 20px; }
         
-        /* Modern Glass Cards with glowing borders */
         .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius); padding: 24px; backdrop-filter: blur(20px); position: relative; overflow: hidden; }
         .card::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; }
         .card.card-temp::before { background: var(--c-temp); box-shadow: 0 0 15px var(--c-temp); }
         .card.card-water::before { background: var(--c-water); box-shadow: 0 0 15px var(--c-water); }
         .card.card-light::before { background: var(--c-light); box-shadow: 0 0 15px var(--c-light); }
         .card.card-sys::before { background: var(--c-sys); box-shadow: 0 0 15px var(--c-sys); }
+        .card.card-term::before { background: var(--c-term); box-shadow: 0 0 15px var(--c-term); }
 
         .group-title { font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 24px; font-weight: 700; color: #fff; opacity: 0.8;}
         
-        /* Sliders */
+        .ip-input { width: 100%; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 14px; border-radius: 12px; font-size: 16px; outline: none; font-family: monospace; box-sizing: border-box;}
+        
         .slider-container { margin-bottom: 28px; }
         .slider-labels { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 12px; color: var(--muted); }
         .slider-labels span.val { font-weight: bold; color: white; font-size: 16px;}
@@ -36,7 +37,6 @@
         .dual-slider input[type="range"]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 20px; height: 20px; background: #111; border: 2px solid white; border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
         .dual-slider input[type="range"]::-webkit-slider-thumb:active { transform: scale(1.2); }
 
-        /* Themed Tracks */
         .card-temp .slider-track { background: var(--c-temp); }
         .card-temp .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-temp); }
         .card-water .slider-track { background: var(--c-water); }
@@ -46,7 +46,6 @@
         .card-sys .slider-track { background: var(--c-sys); }
         .card-sys .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-sys); }
 
-        /* iOS Style Toggle Switch */
         .toggle-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
         .switch input { opacity: 0; width: 0; height: 0; }
@@ -58,6 +57,16 @@
         .btn-push { position: sticky; bottom: 20px; width: 100%; max-width: 600px; background: rgba(255,255,255,0.95); color: #000; border: none; padding: 18px; border-radius: 16px; font-weight: 700; font-size: 16px; cursor: pointer; box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 10; transition: 0.2s;}
         .btn-push:active { transform: scale(0.98); }
         #statusMsg { text-align: center; font-size: 13px; margin-top: 15px; color: var(--muted); }
+
+        /* Terminal CSS */
+        textarea#serialLog { width: 100%; height: 180px; background: #050505; color: var(--c-term); border: 1px solid rgba(0,255,65,0.3); border-radius: 12px; padding: 12px; font-family: monospace; font-size: 12px; resize: none; margin-bottom: 16px; box-sizing: border-box; }
+        textarea#serialLog:focus { outline: none; border-color: var(--c-term); }
+        .btn-row { display: flex; gap: 10px; }
+        .btn-term { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: white; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .btn-term:hover { background: rgba(255,255,255,0.1); }
+        .btn-danger { background: rgba(255,69,58,0.15); border-color: rgba(255,69,58,0.4); color: #ff453a; }
+        .btn-danger:hover { background: rgba(255,69,58,0.25); }
+
     </style>
 </head>
 <body>
@@ -70,7 +79,9 @@
     <div class="form-container" id="formWrapper">
         
         <div class="card card-sys">
-            <div class="group-title">🔌 System Settings</div>
+            <div class="group-title">🔌 Connection & System</div>
+            <input type="text" class="ip-input" id="espIp" placeholder="ESP32 IP (Required for Console) e.g. 192.168.x.x">
+            <br><br>
             <div class="slider-container" style="margin-bottom:0;">
                 <div class="slider-labels"><span>Screen Brightness</span> <span class="val" id="brightVal">10 / 10</span></div>
                 <div class="dual-slider"><div class="slider-track" id="brightTrack" style="width:100%"></div>
@@ -113,12 +124,10 @@
 
         <div class="card card-light">
             <div class="group-title">🌞 Lighting Schedule</div>
-            
             <div class="toggle-row">
                 <div style="font-size:14px; color:var(--muted)">Enable Grow Light Timer</div>
                 <label class="switch"><input type="checkbox" id="timerEnabled"><span class="slider-tog"></span></label>
             </div>
-
             <div class="slider-container">
                 <div class="slider-labels"><span>Turn On Time</span> <span class="val" id="onVal">08:00</span></div>
                 <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
@@ -139,6 +148,15 @@
             </div>
         </div>
 
+        <div class="card card-term">
+            <div class="group-title">💻 Remote Serial Monitor</div>
+            <textarea id="serialLog" readonly>Waiting for connection...</textarea>
+            <div class="btn-row">
+                <button class="btn-term" id="fetchLogBtn">🔄 Fetch Logs</button>
+                <button class="btn-term btn-danger" id="resetBtn">⚠️ Restart EN</button>
+            </div>
+        </div>
+
     </div>
 
     <button class="btn-push" id="sendBtn">Push to Enclosure Cloud ☁️</button>
@@ -148,11 +166,13 @@
         import { db, ref, get, update } from './firebase-config.js';
 
         const inputs = {
-            tempLow: document.getElementById("tempLow"), tempHigh: document.getElementById("tempHigh"),
+            espIp: document.getElementById("espIp"), tempLow: document.getElementById("tempLow"), tempHigh: document.getElementById("tempHigh"),
             humLow: document.getElementById("humLow"), humHigh: document.getElementById("humHigh"), soilLow: document.getElementById("soilLow"),
             soilHigh: document.getElementById("soilHigh"), timeOnHour: document.getElementById("timeOnHour"), timeOffHour: document.getElementById("timeOffHour"), 
             luxThreshold: document.getElementById("luxThreshold"), timerEnabled: document.getElementById("timerEnabled"), globalBrightness: document.getElementById("globalBrightness")
         };
+
+        try { const savedIp = localStorage.getItem("esp32_ip"); if (savedIp) inputs.espIp.value = savedIp; } catch(e) {}
 
         window.updateSliders = function(type) {
             const low = document.getElementById(type + "Low"); const high = document.getElementById(type + "High");
@@ -188,11 +208,16 @@
             window.updateSliders('temp'); window.updateSliders('hum'); window.updateSliders('soil'); window.updateSingles();
         }).catch(err => console.error(err));
 
+        // PUSH SETTINGS LOGIC
         document.getElementById("sendBtn").addEventListener("click", async () => {
+            let targetIp = inputs.espIp.value.trim();
+            if (targetIp && !targetIp.startsWith("http")) targetIp = "http://" + targetIp;
+
             const sendBtn = document.getElementById("sendBtn");
             const statusMsg = document.getElementById("statusMsg");
 
             sendBtn.disabled = true; sendBtn.textContent = "Syncing with Cloud...";
+            try { if (targetIp) localStorage.setItem("esp32_ip", inputs.espIp.value.trim()); } catch(e) {}
 
             const newSettings = {
                 tempLow: parseFloat(inputs.tempLow.value), tempHigh: parseFloat(inputs.tempHigh.value),
@@ -204,8 +229,13 @@
             };
 
             try {
-                // Instantly pushes to the Firebase SDK. Hardware pulls it automatically!
+                // Instantly pushes to the Firebase SDK.
                 await update(settingsRef, newSettings);
+
+                // Optional local hardware push if IP is provided
+                if (targetIp) {
+                    try { await fetch(`${targetIp}/settings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newSettings) }); } catch(e) {}
+                }
 
                 statusMsg.textContent = "✅ Cloud Database Updated! Hardware syncing...";
                 sendBtn.textContent = "Sync Complete"; sendBtn.style.background = "#4fc3f7"; 
@@ -214,6 +244,45 @@
                 statusMsg.textContent = `❌ Error: ${err.message}`; sendBtn.disabled = false; sendBtn.textContent = "Try Again";
             }
         });
+
+        // ==========================================
+        // REMOTE TERMINAL LOGIC
+        // ==========================================
+        const logBox = document.getElementById("serialLog");
+
+        document.getElementById("fetchLogBtn").addEventListener("click", async () => {
+            let targetIp = inputs.espIp.value.trim();
+            if(!targetIp) return alert("ESP32 IP is required to fetch logs locally!");
+            if(!targetIp.startsWith("http")) targetIp = "http://" + targetIp;
+
+            logBox.value = "Fetching logs from " + targetIp + "...";
+            try {
+                const res = await fetch(`${targetIp}/log`);
+                if(!res.ok) throw new Error("Offline");
+                const text = await res.text();
+                logBox.value = text;
+                logBox.scrollTop = logBox.scrollHeight; // Auto-scroll to bottom
+            } catch(e) {
+                logBox.value = `❌ Failed to connect.\nMake sure you are on the same Wi-Fi network and the IP is correct.`;
+            }
+        });
+
+        document.getElementById("resetBtn").addEventListener("click", async () => {
+            let targetIp = inputs.espIp.value.trim();
+            if(!targetIp) return alert("ESP32 IP is required to restart the device!");
+            if(!confirm("⚠️ Are you sure you want to reboot the enclosure? This will interrupt current sensor readings.")) return;
+            
+            if(!targetIp.startsWith("http")) targetIp = "http://" + targetIp;
+            
+            try {
+                await fetch(`${targetIp}/reset`, { method: "POST" });
+                logBox.value += "\n\n[SYSTEM] Remote reboot command sent. Hardware restarting...";
+                logBox.scrollTop = logBox.scrollHeight;
+            } catch(e) {
+                logBox.value += "\n\n[ERROR] Failed to send restart command.";
+            }
+        });
+
     </script>
 </body>
 </html>

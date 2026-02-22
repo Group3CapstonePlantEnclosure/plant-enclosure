@@ -21,8 +21,8 @@
 /* ==========================================
  * OBJECT INITIALIZATION
  * ========================================== */
-U8G2_SH1106_128X64_NONAME_F_HW_I2C topDisplay(U8G2_R0, 22, 21, U8X8_PIN_NONE);
-U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C bottomDisplay(U8G2_R0, 22, 21, U8X8_PIN_NONE);
+U8G2_SH1106_128X64_NONAME_F_SW_I2C topDisplay(U8G2_R0, 22, 21, U8X8_PIN_NONE);
+U8G2_SSD1306_128X32_UNIVISION_F_SW_I2C bottomDisplay(U8G2_R0, 22, 21, U8X8_PIN_NONE);
 WebServer server(80);
 
 // Sensor Thresholds & Settings
@@ -46,12 +46,15 @@ int lastMenuIdx = -1;
 float lastValDisp = -999;   
 int lastStepDisp = -1;      
 
-// UI and Cloud Trackers
+// Web Notification & Cloud Trackers
 bool externalUpdateReceived = false;
 unsigned long bottomMsgTimeout = 0;
 bool showingTempMsg = false;
 unsigned long lastEncoderMoveTime = 0; 
 unsigned long lastCloudCheck = 0;
+
+// --- REMOTE SERIAL LOG BUFFER ---
+String webLogBuffer = "Device Booted.\n";
 
 // --- FIREBASE URL ---
 const char* firebaseURL = "https://plant-enclosure-default-rtdb.firebaseio.com/settings.json";
@@ -75,6 +78,21 @@ void IRAM_ATTR readEncoder() {
   old_AB |= ((digitalRead(ENC_CLK) << 1) | digitalRead(ENC_DT));
   old_AB &= 0x0f;
   if (enc_states[old_AB]) encoderCount += enc_states[old_AB];
+}
+
+/* ==========================================
+ * SYSTEM LOGGING FUNCTION
+ * ========================================== */
+void sysLog(String msg) {
+  Serial.println(msg);
+  // Prepend timestamp
+  String timeStr = "[" + String(currentHour) + ":" + (currentMinute < 10 ? "0" : "") + String(currentMinute) + "] ";
+  webLogBuffer += timeStr + msg + "\n";
+  
+  // Prevent buffer from eating all RAM (keep last ~1000 chars)
+  if (webLogBuffer.length() > 1500) {
+    webLogBuffer = webLogBuffer.substring(webLogBuffer.length() - 1000);
+  }
 }
 
 /* ==========================================
@@ -241,15 +259,26 @@ void enterSubMenu(MenuItem* item) {
  * ========================================== */
 void syncWithCloud() {
   if (WiFi.status() != WL_CONNECTED) return;
+  updateBottomMenu("Syncing...", "Fetching Cloud");
+  sysLog("Connecting to Firebase for Initial Sync...");
   syncWithCloudSilent(); 
 }
 
+// Background Cloud Poller
 void syncWithCloudSilent() {
   if (WiFi.status() != WL_CONNECTED) return;
-  HTTPClient http; http.begin(firebaseURL); int httpCode = http.GET();
+  
+  HTTPClient http; 
+  http.begin(firebaseURL); 
+  int httpCode = http.GET();
+  
   if (httpCode == 200) {
-    String payload = http.getString(); StaticJsonDocument<1024> doc; deserializeJson(doc, payload);
+    String payload = http.getString(); 
+    StaticJsonDocument<1024> doc; 
+    deserializeJson(doc, payload);
+    
     bool changed = false;
+
     if (doc.containsKey("tempLow") && tempLow != doc["tempLow"].as<float>()) { tempLow = doc["tempLow"]; changed = true; }
     if (doc.containsKey("tempHigh") && tempHigh != doc["tempHigh"].as<float>()) { tempHigh = doc["tempHigh"]; changed = true; }
     if (doc.containsKey("humLow") && humLow != doc["humLow"].as<float>()) { humLow = doc["humLow"]; changed = true; }
@@ -260,14 +289,19 @@ void syncWithCloudSilent() {
     if (doc.containsKey("timeOffHour") && timeOffHour != doc["timeOffHour"].as<int>()) { timeOffHour = doc["timeOffHour"]; changed = true; }
     if (doc.containsKey("luxThreshold") && luxThreshold != doc["luxThreshold"].as<long>()) { luxThreshold = doc["luxThreshold"]; changed = true; }
     if (doc.containsKey("timerEnabled") && timerEnabled != doc["timerEnabled"].as<bool>()) { timerEnabled = doc["timerEnabled"]; changed = true; }
-    if (doc.containsKey("globalBrightness") && globalBrightness != doc["globalBrightness"].as<int>()) { globalBrightness = doc["globalBrightness"]; applyBrightness(globalBrightness); changed = true; }
+    if (doc.containsKey("globalBrightness") && globalBrightness != doc["globalBrightness"].as<int>()) { 
+        globalBrightness = doc["globalBrightness"]; applyBrightness(globalBrightness); changed = true; 
+    }
 
     if (changed) {
+        sysLog("Cloud changes detected. Values applied.");
         updateBottomMenu("Web Update", "Received!");
         bottomMsgTimeout = millis() + 2000;
         showingTempMsg = true;
         externalUpdateReceived = true;
     }
+  } else {
+    sysLog("Warning: Could not reach Firebase.");
   }
   http.end();
 }
@@ -275,48 +309,109 @@ void syncWithCloudSilent() {
 void pushToCloud() {
   if (WiFi.status() != WL_CONNECTED) return;
   updateBottomMenu("Saving to Cloud", "Please wait...");
-  HTTPClient http; http.begin(firebaseURL); http.addHeader("Content-Type", "application/json");
+  sysLog("Pushing local hardware changes to cloud...");
+  
+  HTTPClient http;
+  http.begin(firebaseURL);
+  http.addHeader("Content-Type", "application/json");
+
   StaticJsonDocument<512> doc;
-  doc["tempLow"] = tempLow; doc["tempHigh"] = tempHigh; doc["humLow"] = humLow; doc["humHigh"] = humHigh;
-  doc["soilLow"] = soilLow; doc["soilHigh"] = soilHigh; doc["timeOnHour"] = timeOnHour; doc["timeOffHour"] = timeOffHour;
-  doc["luxThreshold"] = luxThreshold; doc["timerEnabled"] = timerEnabled; doc["globalBrightness"] = globalBrightness;
-  String jsonOutput; serializeJson(doc, jsonOutput);
+  doc["tempLow"] = tempLow; doc["tempHigh"] = tempHigh;
+  doc["humLow"] = humLow; doc["humHigh"] = humHigh;
+  doc["soilLow"] = soilLow; doc["soilHigh"] = soilHigh;
+  doc["timeOnHour"] = timeOnHour; doc["timeOffHour"] = timeOffHour;
+  doc["luxThreshold"] = luxThreshold;
+  doc["timerEnabled"] = timerEnabled;
+  doc["globalBrightness"] = globalBrightness;
+
+  String jsonOutput;
+  serializeJson(doc, jsonOutput);
+  
   int httpCode = http.sendRequest("PATCH", jsonOutput);
-  if (httpCode > 0) updateBottomMenu("Cloud Update", "Successful!");
-  http.end(); delay(1000); lastMenuIdx = -1;
+  if (httpCode > 0) {
+    updateBottomMenu("Cloud Update", "Successful!");
+    sysLog("Cloud updated successfully.");
+  } else {
+    updateBottomMenu("Cloud Error", String(httpCode));
+    sysLog("Failed to update cloud!");
+  }
+  
+  http.end();
+  delay(1000);
+  lastMenuIdx = -1; // Reset hover context when returning
 }
 
-void addCORS() { server.sendHeader("Access-Control-Allow-Origin", "*"); server.sendHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS"); server.sendHeader("Access-Control-Allow-Headers", "Content-Type"); }
-void handleOptions() { addCORS(); server.send(204); }
-void handleSettingsPost() { server.send(200, "application/json", "{\"status\":\"ok\"}"); }
-void setupServer() { server.on("/settings", HTTP_OPTIONS, handleOptions); server.on("/settings", HTTP_POST, handleSettingsPost); server.on("/", HTTP_GET, []() { addCORS(); server.send(200, "text/plain", "ESP32 is online"); }); server.begin(); }
-
 /* ==========================================
- * ARDUINO SETUP
+ * WIFI SERVER HANDLERS (NEW LOG & RESET ADDED)
  * ========================================== */
+void addCORS() { 
+  server.sendHeader("Access-Control-Allow-Origin", "*"); 
+  server.sendHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS"); 
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type"); 
+}
+
+void handleOptions() { addCORS(); server.send(204); }
+
+void handleSettingsPost() { 
+  addCORS();
+  sysLog("Local IP Web update received.");
+  server.send(200, "application/json", "{\"status\":\"ok\"}"); 
+}
+
+void setupServer() { 
+  server.on("/settings", HTTP_OPTIONS, handleOptions); 
+  server.on("/settings", HTTP_POST, handleSettingsPost); 
+  
+  // NEW: Return Log String
+  server.on("/log", HTTP_GET, []() {
+    addCORS();
+    server.send(200, "text/plain", webLogBuffer);
+  });
+
+  // NEW: Restart Device
+  server.on("/reset", HTTP_OPTIONS, handleOptions);
+  server.on("/reset", HTTP_POST, []() {
+    addCORS();
+    sysLog("Remote Restart Commanded!");
+    server.send(200, "application/json", "{\"status\":\"restarting\"}");
+    delay(500); // Give it time to send the HTTP response
+    ESP.restart(); // Software Reset (Same as EN button)
+  });
+
+  server.on("/", HTTP_GET, []() { addCORS(); server.send(200, "text/plain", "ESP32 is online"); }); 
+  server.begin(); 
+}
+
 void setup() {
   Serial.begin(115200);
+  sysLog("Initializing Hardware...");
+
   pinMode(ENC_CLK, INPUT); pinMode(ENC_DT, INPUT); pinMode(ENC_SW, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(ENC_CLK), readEncoder, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENC_DT), readEncoder, CHANGE);
 
   Wire.begin(I2C_SDA, I2C_SCL);
-  topDisplay.setBusClock(250000); bottomDisplay.setBusClock(250000); // 250kHz  
+  topDisplay.setBusClock(400000); bottomDisplay.setBusClock(400000); // 400kHz Boost 
   bottomDisplay.setI2CAddress(BOTTOM_ADDR * 2); bottomDisplay.begin();
   topDisplay.setI2CAddress(TOP_ADDR * 2); topDisplay.begin();
   applyBrightness(globalBrightness);
 
   updateBottomMenu("Connecting WiFi...", "Please wait");
   WiFiManager wm; wm.setConfigPortalTimeout(15);
-  if (wm.autoConnect("Plant_Setup", "plantadmin")) { setupServer(); syncWithCloud(); } 
-  else { updateBottomMenu("WiFi Skipped", "Local Mode"); delay(2000); }
+  
+  if (wm.autoConnect("Plant_Setup", "plantadmin")) { 
+    sysLog("WiFi Connected: " + WiFi.localIP().toString());
+    setupServer(); 
+    syncWithCloud(); 
+  } else { 
+    sysLog("WiFi Connection Skipped.");
+    updateBottomMenu("WiFi Skipped", "Local Mode"); 
+    delay(2000); 
+  }
 
   currentMenu = mainMenu; currentMenuSize = 6; lastMinuteTick = millis();
 }
 
-/* ==========================================
- * ARDUINO LOOP
- * ========================================== */
 void loop() {
   updateClock();
   server.handleClient();
