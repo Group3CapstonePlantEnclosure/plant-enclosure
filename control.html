@@ -15,6 +15,7 @@
 
         .form-container { width: 100%; max-width: 600px; display: flex; flex-direction: column; gap: 20px; }
         
+        /* Modern Glass Cards with glowing borders */
         .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius); padding: 24px; backdrop-filter: blur(20px); position: relative; overflow: hidden; }
         .card::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; }
         .card.card-temp::before { background: var(--c-temp); box-shadow: 0 0 15px var(--c-temp); }
@@ -25,8 +26,7 @@
 
         .group-title { font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 24px; font-weight: 700; color: #fff; opacity: 0.8;}
         
-        .ip-input { width: 100%; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 14px; border-radius: 12px; font-size: 16px; outline: none; font-family: monospace; box-sizing: border-box;}
-        
+        /* Sliders */
         .slider-container { margin-bottom: 28px; }
         .slider-labels { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 12px; color: var(--muted); }
         .slider-labels span.val { font-weight: bold; color: white; font-size: 16px;}
@@ -37,6 +37,7 @@
         .dual-slider input[type="range"]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 20px; height: 20px; background: #111; border: 2px solid white; border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
         .dual-slider input[type="range"]::-webkit-slider-thumb:active { transform: scale(1.2); }
 
+        /* Themed Tracks */
         .card-temp .slider-track { background: var(--c-temp); }
         .card-temp .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-temp); }
         .card-water .slider-track { background: var(--c-water); }
@@ -46,6 +47,7 @@
         .card-sys .slider-track { background: var(--c-sys); }
         .card-sys .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-sys); }
 
+        /* iOS Style Toggle Switch */
         .toggle-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
         .switch input { opacity: 0; width: 0; height: 0; }
@@ -66,7 +68,6 @@
         .btn-term:hover { background: rgba(255,255,255,0.1); }
         .btn-danger { background: rgba(255,69,58,0.15); border-color: rgba(255,69,58,0.4); color: #ff453a; }
         .btn-danger:hover { background: rgba(255,69,58,0.25); }
-
     </style>
 </head>
 <body>
@@ -79,9 +80,7 @@
     <div class="form-container" id="formWrapper">
         
         <div class="card card-sys">
-            <div class="group-title">🔌 Connection & System</div>
-            <input type="text" class="ip-input" id="espIp" placeholder="ESP32 IP (Required for Console) e.g. 192.168.x.x">
-            <br><br>
+            <div class="group-title">🔌 System Settings</div>
             <div class="slider-container" style="margin-bottom:0;">
                 <div class="slider-labels"><span>Screen Brightness</span> <span class="val" id="brightVal">10 / 10</span></div>
                 <div class="dual-slider"><div class="slider-track" id="brightTrack" style="width:100%"></div>
@@ -149,11 +148,11 @@
         </div>
 
         <div class="card card-term">
-            <div class="group-title">💻 Remote Serial Monitor</div>
+            <div class="group-title">☁️ Cloud Serial Monitor</div>
             <textarea id="serialLog" readonly>Waiting for connection...</textarea>
             <div class="btn-row">
-                <button class="btn-term" id="fetchLogBtn">🔄 Fetch Logs</button>
-                <button class="btn-term btn-danger" id="resetBtn">⚠️ Restart EN</button>
+                <button class="btn-term" id="fetchLogBtn">🔄 Request Logs</button>
+                <button class="btn-term btn-danger" id="resetBtn">⚠️ Remote Reboot</button>
             </div>
         </div>
 
@@ -163,16 +162,14 @@
     <div id="statusMsg">Ready.</div>
 
     <script type="module">
-        import { db, ref, get, update } from './firebase-config.js';
+        import { db, ref, get, update, onValue } from './firebase-config.js';
 
         const inputs = {
-            espIp: document.getElementById("espIp"), tempLow: document.getElementById("tempLow"), tempHigh: document.getElementById("tempHigh"),
+            tempLow: document.getElementById("tempLow"), tempHigh: document.getElementById("tempHigh"),
             humLow: document.getElementById("humLow"), humHigh: document.getElementById("humHigh"), soilLow: document.getElementById("soilLow"),
             soilHigh: document.getElementById("soilHigh"), timeOnHour: document.getElementById("timeOnHour"), timeOffHour: document.getElementById("timeOffHour"), 
             luxThreshold: document.getElementById("luxThreshold"), timerEnabled: document.getElementById("timerEnabled"), globalBrightness: document.getElementById("globalBrightness")
         };
-
-        try { const savedIp = localStorage.getItem("esp32_ip"); if (savedIp) inputs.espIp.value = savedIp; } catch(e) {}
 
         window.updateSliders = function(type) {
             const low = document.getElementById(type + "Low"); const high = document.getElementById(type + "High");
@@ -195,6 +192,8 @@
         }
 
         const settingsRef = ref(db, 'settings');
+
+        // Fetch settings initially
         get(settingsRef).then((snapshot) => {
             const d = snapshot.val();
             if (d && d.tempLow !== undefined) {
@@ -208,16 +207,22 @@
             window.updateSliders('temp'); window.updateSliders('hum'); window.updateSliders('soil'); window.updateSingles();
         }).catch(err => console.error(err));
 
-        // PUSH SETTINGS LOGIC
-        document.getElementById("sendBtn").addEventListener("click", async () => {
-            let targetIp = inputs.espIp.value.trim();
-            if (targetIp && !targetIp.startsWith("http")) targetIp = "http://" + targetIp;
+        // Listen for new logs automatically!
+        onValue(settingsRef, (snapshot) => {
+            const d = snapshot.val();
+            if(d && d.system_logs) {
+                const logBox = document.getElementById("serialLog");
+                logBox.value = d.system_logs;
+                logBox.scrollTop = logBox.scrollHeight;
+            }
+        });
 
+        // PUSH CLIMATE SETTINGS
+        document.getElementById("sendBtn").addEventListener("click", async () => {
             const sendBtn = document.getElementById("sendBtn");
             const statusMsg = document.getElementById("statusMsg");
 
             sendBtn.disabled = true; sendBtn.textContent = "Syncing with Cloud...";
-            try { if (targetIp) localStorage.setItem("esp32_ip", inputs.espIp.value.trim()); } catch(e) {}
 
             const newSettings = {
                 tempLow: parseFloat(inputs.tempLow.value), tempHigh: parseFloat(inputs.tempHigh.value),
@@ -229,14 +234,7 @@
             };
 
             try {
-                // Instantly pushes to the Firebase SDK.
                 await update(settingsRef, newSettings);
-
-                // Optional local hardware push if IP is provided
-                if (targetIp) {
-                    try { await fetch(`${targetIp}/settings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newSettings) }); } catch(e) {}
-                }
-
                 statusMsg.textContent = "✅ Cloud Database Updated! Hardware syncing...";
                 sendBtn.textContent = "Sync Complete"; sendBtn.style.background = "#4fc3f7"; 
                 setTimeout(() => { sendBtn.disabled = false; sendBtn.textContent = "Push to Enclosure Cloud ☁️"; sendBtn.style.background = ""; }, 3000);
@@ -246,41 +244,23 @@
         });
 
         // ==========================================
-        // REMOTE TERMINAL LOGIC
+        // TRUE CLOUD TERMINAL COMMANDS
         // ==========================================
         const logBox = document.getElementById("serialLog");
 
         document.getElementById("fetchLogBtn").addEventListener("click", async () => {
-            let targetIp = inputs.espIp.value.trim();
-            if(!targetIp) return alert("ESP32 IP is required to fetch logs locally!");
-            if(!targetIp.startsWith("http")) targetIp = "http://" + targetIp;
-
-            logBox.value = "Fetching logs from " + targetIp + "...";
-            try {
-                const res = await fetch(`${targetIp}/log`);
-                if(!res.ok) throw new Error("Offline");
-                const text = await res.text();
-                logBox.value = text;
-                logBox.scrollTop = logBox.scrollHeight; // Auto-scroll to bottom
-            } catch(e) {
-                logBox.value = `❌ Failed to connect.\nMake sure you are on the same Wi-Fi network and the IP is correct.`;
-            }
+            logBox.value += "\n\n[CLOUD] Requesting log dump from ESP32...";
+            logBox.scrollTop = logBox.scrollHeight;
+            // Send the command flag to Firebase
+            await update(settingsRef, { fetch_logs_cmd: true });
         });
 
         document.getElementById("resetBtn").addEventListener("click", async () => {
-            let targetIp = inputs.espIp.value.trim();
-            if(!targetIp) return alert("ESP32 IP is required to restart the device!");
-            if(!confirm("⚠️ Are you sure you want to reboot the enclosure? This will interrupt current sensor readings.")) return;
-            
-            if(!targetIp.startsWith("http")) targetIp = "http://" + targetIp;
-            
-            try {
-                await fetch(`${targetIp}/reset`, { method: "POST" });
-                logBox.value += "\n\n[SYSTEM] Remote reboot command sent. Hardware restarting...";
-                logBox.scrollTop = logBox.scrollHeight;
-            } catch(e) {
-                logBox.value += "\n\n[ERROR] Failed to send restart command.";
-            }
+            if(!confirm("⚠️ Are you sure you want to reboot the enclosure from the cloud?")) return;
+            logBox.value += "\n\n[CLOUD] Sending Remote Reboot Command...";
+            logBox.scrollTop = logBox.scrollHeight;
+            // Send the command flag to Firebase
+            await update(settingsRef, { reboot_cmd: true });
         });
 
     </script>
