@@ -17,12 +17,12 @@
 #define ENC_CLK 32
 #define ENC_DT 33
 #define ENC_SW 25
-
+#define I2CBusClock 250000 //250kHz
 /* ==========================================
  * OBJECT INITIALIZATION
  * ========================================== */
-U8G2_SH1106_128X64_NONAME_F_SW_I2C topDisplay(U8G2_R0, 22, 21, U8X8_PIN_NONE);
-U8G2_SSD1306_128X32_UNIVISION_F_SW_I2C bottomDisplay(U8G2_R0, 22, 21, U8X8_PIN_NONE);
+U8G2_SH1106_128X64_NONAME_F_HW_I2C topDisplay(U8G2_R0, 22, 21, U8X8_PIN_NONE);
+U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C bottomDisplay(U8G2_R0, 22, 21, U8X8_PIN_NONE);
 
 // Sensor Thresholds & Settings
 float tempLow = 68.0, tempHigh = 77.0, humLow = 40.0, humHigh = 80.0;
@@ -362,7 +362,7 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(ENC_DT), readEncoder, CHANGE);
 
   Wire.begin(I2C_SDA, I2C_SCL);
-  topDisplay.setBusClock(400000); bottomDisplay.setBusClock(400000); // 400kHz Boost 
+  topDisplay.setBusClock(I2CBusClock); bottomDisplay.setBusClock(I2CBusClock);
   bottomDisplay.setI2CAddress(BOTTOM_ADDR * 2); bottomDisplay.begin();
   topDisplay.setI2CAddress(TOP_ADDR * 2); topDisplay.begin();
   applyBrightness(globalBrightness);
