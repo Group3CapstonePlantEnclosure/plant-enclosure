@@ -6,7 +6,7 @@
 #include <WebServer.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
-#include <time.h> // NEW: For NTP Clock Syncing
+#include <time.h> // For NTP Clock Syncing
 
 /* ==========================================
  * PIN DEFINITIONS
@@ -18,7 +18,7 @@
 #define ENC_CLK 32
 #define ENC_DT 33
 #define ENC_SW 25
-#define I2CBusClock 250000 //250kHz
+#define I2CBusClock 250000 // 250kHz
 
 /* ==========================================
  * OBJECT INITIALIZATION (HW RENDER PRESERVED)
@@ -102,15 +102,27 @@ void startEditTemp(); void startEditHum(); void startEditSoil(); void toggleTime
 void startEditLux(); void resetGlobal(); void showPH(); void startSensorTest();
 void startSetClock(); void startEditBrightness(); void goBack();
 void startWiFiSetup(); void showWiFiIP(); void resetWiFi();
-void pushToCloud(); void syncWithCloudSilent();
+void pushToCloud(); void syncWithCloudSilent(); void triggerESPReset(); // Added Reset Decl
 
 MenuItem tempItems[] = { { "Set Range", startEditTemp, nullptr, 0 }, { "Back", nullptr, nullptr, 0 } };
 MenuItem humItems[] = { { "Set Range", startEditHum, nullptr, 0 }, { "Back", nullptr, nullptr, 0 } };
 MenuItem soilItems[] = { { "Set Range", startEditSoil, nullptr, 0 }, { "Back", nullptr, nullptr, 0 } };
 MenuItem lightItems[] = { { "Timer: OFF", toggleTimer, nullptr, 0 }, { "Set LUX Limit", startEditLux, nullptr, 0 }, { "Back", nullptr, nullptr, 0 } };
 MenuItem wifiItems[] = { { "Setup", startWiFiSetup, nullptr, 0 }, { "Show IP", showWiFiIP, nullptr, 0 }, { "Reset WiFi", resetWiFi, nullptr, 0 }, { "Back", nullptr, nullptr, 0 } };
-MenuItem settingsItems[] = { { "WiFi", nullptr, wifiItems, 4 }, { "Set Clock", startSetClock, nullptr, 0 }, { "Brightness", startEditBrightness, nullptr, 0 }, { "Sensor Test", startSensorTest, nullptr, 0 }, { "Global Reset", resetGlobal, nullptr, 0 }, { "Back", nullptr, nullptr, 0 } };
-MenuItem mainMenu[] = { { "Temperature", nullptr, tempItems, 2 }, { "Humidity", nullptr, humItems, 2 }, { "Soil Moisture", nullptr, soilItems, 2 }, { "Light Control", nullptr, lightItems, 3 }, { "pH Level", showPH, nullptr, 0 }, { "Settings", nullptr, settingsItems, 6 } };
+
+// ADDED ESP32 RESET TO SETTINGS MENU
+MenuItem settingsItems[] = { 
+  { "WiFi", nullptr, wifiItems, 4 }, 
+  { "Set Clock", startSetClock, nullptr, 0 }, 
+  { "Brightness", startEditBrightness, nullptr, 0 }, 
+  { "Sensor Test", startSensorTest, nullptr, 0 }, 
+  { "Global Reset", resetGlobal, nullptr, 0 }, 
+  { "ESP32 Reset", triggerESPReset, nullptr, 0 }, // NEW PHYSICAL REBOOT OPTION
+  { "Back", nullptr, nullptr, 0 } 
+};
+
+// Updated child count for settingsItems from 6 to 7
+MenuItem mainMenu[] = { { "Temperature", nullptr, tempItems, 2 }, { "Humidity", nullptr, humItems, 2 }, { "Soil Moisture", nullptr, soilItems, 2 }, { "Light Control", nullptr, lightItems, 3 }, { "pH Level", showPH, nullptr, 0 }, { "Settings", nullptr, settingsItems, 7 } };
 
 void applyBrightness(int level) {
   int contrast = map(level, 1, 10, 1, 255); // 1 = Minimum display power, 10 = Max power
@@ -258,6 +270,14 @@ void startEditBrightness() { uiState = STATE_EDIT_BRIGHTNESS; editCurrent = glob
 void resetGlobal() { tempLow = 68.0; tempHigh = 77.0; humLow = 50.0; humHigh = 60.0; soilLow = 40; soilHigh = 60; timeOnHour = 8; timeOnMinute = 0; timeOffHour = 20; timeOffMinute = 0; luxThreshold = 50000; timerEnabled = false; globalBrightness = 10; applyBrightness(globalBrightness); updateBottomMenu("Defaults", "Restored"); pushToCloud(); delay(1500); lastMenuIdx = -1; }
 void showPH() { updateBottomMenu("pH: 7.0", "Sensor OK"); delay(2000); lastMenuIdx = -1; }
 void startSensorTest() { uiState = STATE_SENSOR_TEST; }
+
+// NEW PHYSICAL MENU REBOOT FUNCTION
+void triggerESPReset() {
+  updateBottomMenu("REBOOTING", "Please wait...");
+  sysLog("Manual hardware reset triggered via physical menu.");
+  delay(1000);
+  ESP.restart();
+}
 
 void goBack() {
   if (stackDepth == 0) { currentMenu = mainMenu; currentMenuSize = 6; selectedIndex = 0; uiState = STATE_MENU; currentHeaderName = "-- MAIN MENU --"; } 
