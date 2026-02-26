@@ -1,10 +1,9 @@
 /*
   Device: Arduino Uno R4 WiFi
-  Role: BLE Peripheral (Server)
-  Hardware: VEML7700 (I2C), DHT11 (Pin 2)
+  Role: UART Data Sender/Receiver (Replaces BLE)
+  Hardware: VEML7700 (I2C), DHT11 (Pin 2), UART (TX/RX)
 */
 
-#include <ArduinoBLE.h>
 #include <Wire.h>
 #include <Adafruit_VEML7700.h>
 #include <DHT.h>
@@ -13,27 +12,25 @@
 #define DHTPIN 2
 #define DHTTYPE DHT11
 
-// UUIDs must match your ESP32 Client code
-const char* serviceUUID = "19B10000-E8F2-537E-4F6C-D104768A1214";
-const char* sensorCharUUID = "19B10001-E8F2-537E-4F6C-D104768A1214"; // Data: R4 -> ESP32
-const char* messageCharUUID = "19B10002-E8F2-537E-4F6C-D104768A1214"; // Commands: ESP32 -> R4
+// Define the hardware serial port. 
+// Change to Serial1 if your Uno R4 does not have a custom Serial2 mapped.
+#define COMM_SERIAL Serial2 
 
 // Initialize Sensors
 DHT dht(DHTPIN, DHTTYPE);
 Adafruit_VEML7700 veml = Adafruit_VEML7700();
 
-// BLE Service & Characteristics
-BLEService customService(serviceUUID);
-// BLENotify allows the ESP32 to receive updates without constant polling
-BLEStringCharacteristic sensorCharacteristic(sensorCharUUID, BLERead | BLENotify, 50);
-BLEStringCharacteristic messageCharacteristic(messageCharUUID, BLEWrite | BLERead, 50);
-
 unsigned long lastUpdate = 0;
 const long updateInterval = 5000; // Send data every 5 seconds
 
 void setup() {
+  // Main serial for PC debugging
   Serial.begin(115200);
   while (!Serial);
+
+  // Initialize UART communication with the ESP32
+  // Ensure the ESP32 code is also set to 115200 baud for its Serial2
+  COMM_SERIAL.begin(115200);
 
   // 1. Initialize Sensors
   dht.begin();
@@ -46,58 +43,37 @@ void setup() {
   veml.setGain(VEML7700_GAIN_1);
   veml.setIntegrationTime(VEML7700_IT_100MS);
 
-  // 2. Initialize BLE
-  if (!BLE.begin()) {
-    Serial.println("Starting BLE failed!");
-    while (1);
-  }
-
-  BLE.setLocalName("UnoR4_Sensor_Hub");
-  BLE.setAdvertisedService(customService);
-  
-  customService.addCharacteristic(sensorCharacteristic);
-  customService.addCharacteristic(messageCharacteristic);
-
-  BLE.addService(customService);
-  BLE.advertise();
-
-  Serial.println("BLE Peripheral active. Awaiting ESP32 connection...");
+  Serial.println("UART Hub active. Communicating with ESP32 via TX/RX...");
 }
 
 void loop() {
-  BLEDevice central = BLE.central();
+  unsigned long currentMillis = millis();
 
-  if (central) {
-    Serial.print("Connected to: ");
-    Serial.println(central.address());
-
-    while (central.connected()) {
-      unsigned long currentMillis = millis();
-
-      // --- Task 1: Check for incoming messages from ESP32 ---
-      if (messageCharacteristic.written()) {
-        String received = messageCharacteristic.value();
-        Serial.print("ESP32 Command: ");
-        Serial.println(received);
-      }
-
-      // --- Task 2: Check for manual Serial input to send to ESP32 ---
-      if (Serial.available()) {
-        String manualMsg = Serial.readStringUntil('\n');
-        manualMsg.trim();
-        if (manualMsg.length() > 0) {
-          sensorCharacteristic.writeValue(manualMsg);
-          Serial.println("Manual Msg Sent to ESP32.");
-        }
-      }
-
-      // --- Task 3: Send Sensor Data Packets ---
-      if (currentMillis - lastUpdate >= updateInterval) {
-        lastUpdate = currentMillis;
-        sendSensorData();
-      }
+  // --- Task 1: Check for incoming messages from ESP32 ---
+  // Using \n as the end-of-message marker
+  if (COMM_SERIAL.available()) {
+    String received = COMM_SERIAL.readStringUntil('\n');
+    received.trim(); // Clean up hidden carriage returns
+    if (received.length() > 0) {
+      Serial.print("ESP32 Command: ");
+      Serial.println(received);
     }
-    Serial.println("Disconnected from central.");
+  }
+
+  // --- Task 2: Check for manual Serial input to send to ESP32 ---
+  if (Serial.available()) {
+    String manualMsg = Serial.readStringUntil('\n');
+    manualMsg.trim();
+    if (manualMsg.length() > 0) {
+      COMM_SERIAL.println(manualMsg);
+      Serial.println("Manual Msg Sent to ESP32.");
+    }
+  }
+
+  // --- Task 3: Send Sensor Data Packets ---
+  if (currentMillis - lastUpdate >= updateInterval) {
+    lastUpdate = currentMillis;
+    sendSensorData();
   }
 }
 
@@ -115,9 +91,9 @@ void sendSensorData() {
   // Format: "T:22.5,H:45,L:350.2"
   String dataPacket = "T:" + String(t, 1) + ",H:" + String(h, 0) + ",L:" + String(lux, 1);
   
-  Serial.print("Broadcasting Packet: ");
+  Serial.print("Sending Packet over UART: ");
   Serial.println(dataPacket);
 
-  // Push update to ESP32
-  sensorCharacteristic.writeValue(dataPacket);
+  // Push update to ESP32 over UART (println automatically adds \r\n)
+  COMM_SERIAL.println(dataPacket);
 }
