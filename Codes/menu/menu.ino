@@ -93,8 +93,34 @@ int lastEncoderCount = 0;
 static const int8_t enc_states[] = { 0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0 };
 static uint8_t old_AB = 0;
 
-// --- SERIAL PARSER ---
+// --- SERIAL PARSER & LIVE CLOUD UPLOAD ---
+void pushLiveDataToCloud() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  
+  HTTPClient http; 
+  http.begin(firebaseURL); // Patches into the same settings.json path
+  http.addHeader("Content-Type", "application/json");
+  
+  StaticJsonDocument<200> doc; 
+  doc["liveTemp"] = liveTemp; 
+  doc["liveHum"] = liveHum; 
+  doc["liveLux"] = liveLux; 
+  
+  String jsonOutput; 
+  serializeJson(doc, jsonOutput); 
+  
+  int httpCode = http.sendRequest("PATCH", jsonOutput);
+  if (httpCode > 0) {
+    // Optionally log success to serial, but kept quiet to avoid spamming
+  } else {
+    sysLog("Failed to push live data: " + String(httpCode));
+  }
+  http.end(); 
+}
+
 void checkSerialSensors() {
+  bool newDataReceived = false;
+
   while (Serial2.available()) {
     String data = Serial2.readStringUntil('\n');
     data.trim();
@@ -110,8 +136,14 @@ void checkSerialSensors() {
         liveHum = data.substring(hIndex + 2, comma2).toFloat();
         liveLux = data.substring(lIndex + 2).toFloat();
         lastSerialRecv = millis();
+        newDataReceived = true; // Flag that we got fresh data
       }
     }
+  }
+
+  // Push to Firebase only when a new packet has arrived (every ~5 seconds)
+  if (newDataReceived) {
+    pushLiveDataToCloud();
   }
 }
 
@@ -123,6 +155,7 @@ void startSetClock(); void startEditBrightness(); void goBack(); void startWiFiS
 void showWiFiIP(); void resetWiFi(); void pushToCloud(); void syncWithCloudSilent(); 
 void triggerESPReset(); void startWiFiSelect(); void syncWithCloud();
 void setTimeZone(int offset, String name);
+void pushLiveDataToCloud(); 
 
 // --- TIME ZONE SETTERS ---
 void setEST() { setTimeZone(-5, "EST (UTC-5)"); }

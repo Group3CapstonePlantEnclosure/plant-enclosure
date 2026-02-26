@@ -86,7 +86,7 @@
         <a href="list.html" class="btn">🌿 Browse Plants</a>
     </div>
 
-   <script type="module">
+<script type="module">
         import { db, ref, onValue } from './firebase-config.js';
 
         const settingsRef = ref(db, 'settings');
@@ -100,10 +100,30 @@
         onValue(settingsRef, (snapshot) => {
             const data = snapshot.val();
             if (data && data.tempLow !== undefined) {
-                document.getElementById("dispTemp").textContent = `${data.tempLow}°F - ${data.tempHigh}°F`;
-                document.getElementById("dispHum").textContent = `${data.humLow}% - ${data.humHigh}%`;
+                
+                // --- NEW LIVE DATA LOGIC ---
+                // If live data exists, display it as the main value and move targets to the sub-label
+                if (data.liveTemp !== undefined) {
+                    document.getElementById("dispTemp").textContent = `${data.liveTemp}°F`;
+                    document.getElementById("dispTemp").previousElementSibling.textContent = "Current Temp";
+                    document.getElementById("dispTemp").nextElementSibling.textContent = `Target: ${data.tempLow}° - ${data.tempHigh}°`;
+                    
+                    document.getElementById("dispHum").textContent = `${data.liveHum}%`;
+                    document.getElementById("dispHum").previousElementSibling.textContent = "Current Humidity";
+                    document.getElementById("dispHum").nextElementSibling.textContent = `Target: ${data.humLow}% - ${data.humHigh}%`;
+
+                    document.getElementById("dispLux").textContent = `${data.liveLux} lux`;
+                    document.getElementById("dispLux").previousElementSibling.textContent = "Current Light";
+                    document.getElementById("dispLux").nextElementSibling.textContent = `Limit: ${data.luxThreshold} lux`;
+                } else {
+                    // Fallback to original behavior if no live data is found yet
+                    document.getElementById("dispTemp").textContent = `${data.tempLow}°F - ${data.tempHigh}°F`;
+                    document.getElementById("dispHum").textContent = `${data.humLow}% - ${data.humHigh}%`;
+                    document.getElementById("dispLux").textContent = `${data.luxThreshold} lux`;
+                }
+                // ---------------------------
+
                 document.getElementById("dispSoil").textContent = `${data.soilLow}% - ${data.soilHigh}%`;
-                document.getElementById("dispLux").textContent = `${data.luxThreshold} lux`;
                 document.getElementById("dispBright").textContent = `${data.globalBrightness || 10}/10`;
                 
                 let onH = window.formatAMPM(data.timeOnHour);
