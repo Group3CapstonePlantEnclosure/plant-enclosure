@@ -553,6 +553,10 @@ void syncWithCloudSilent() {
     if (doc.containsKey("soilLow") && soilLow != doc["soilLow"].as<float>()) { soilLow = doc["soilLow"]; changed = true; }
     if (doc.containsKey("soilHigh") && soilHigh != doc["soilHigh"].as<float>()) { soilHigh = doc["soilHigh"]; changed = true; }
     if (doc.containsKey("timeOnHour") && timeOnHour != doc["timeOnHour"].as<int>()) { timeOnHour = doc["timeOnHour"]; changed = true; }
+    if (doc.containsKey("timeOffHour") && timeOffHour != doc["timeOffHour"].as<int>()) { timeOffHour = doc["timeOffHour"]; changed = true; }
+    if (doc.containsKey("timeOnMinute") && timeOnMinute != doc["timeOnMinute"].as<int>()) { timeOnMinute = doc["timeOnMinute"]; changed = true; }
+    if (doc.containsKey("timeOffMinute") && timeOffMinute != doc["timeOffMinute"].as<int>()) { timeOffMinute = doc["timeOffMinute"]; changed = true; }
+
     if (doc.containsKey("luxThreshold") && luxThreshold != doc["luxThreshold"].as<long>()) { luxThreshold = doc["luxThreshold"]; changed = true; }
     if (doc.containsKey("timerEnabled") && timerEnabled != doc["timerEnabled"].as<bool>()) { timerEnabled = doc["timerEnabled"]; changed = true; }
     
@@ -560,6 +564,13 @@ void syncWithCloudSilent() {
     if (doc.containsKey("timeZoneOffset") && timeZoneOffset != doc["timeZoneOffset"].as<int>()) { 
       timeZoneOffset = doc["timeZoneOffset"]; 
       configTime(timeZoneOffset * 3600, 0, "pool.ntp.org", "time.nist.gov");
+      changed = true; 
+    }
+
+    // Brightness Sync (FIXED)
+    if (doc.containsKey("globalBrightness") && globalBrightness != doc["globalBrightness"].as<int>()) { 
+      globalBrightness = doc["globalBrightness"]; 
+      applyBrightness(globalBrightness); 
       changed = true; 
     }
     
@@ -583,9 +594,13 @@ void pushToCloud() {
   doc["humLow"] = humLow; doc["humHigh"] = humHigh; 
   doc["soilLow"] = soilLow; doc["soilHigh"] = soilHigh; 
   doc["timeOnHour"] = timeOnHour; 
+  doc["timeOffHour"] = timeOffHour; // FIXED
+  doc["timeOnMinute"] = timeOnMinute;
+  doc["timeOffMinute"] = timeOffMinute;
   doc["luxThreshold"] = luxThreshold; 
   doc["timerEnabled"] = timerEnabled;
   doc["timeZoneOffset"] = timeZoneOffset;
+  doc["globalBrightness"] = globalBrightness; // FIXED
   
   String jsonOutput; serializeJson(doc, jsonOutput); int httpCode = http.sendRequest("PATCH", jsonOutput);
   if (httpCode > 0) updateBottomMenu("Cloud Update", "Successful!"); else updateBottomMenu("Cloud Error", String(httpCode));
@@ -681,9 +696,47 @@ void loop() {
        if (editStep == 0) { *pEditVal1 = editCurrent; editStep = 1; editCurrent = *pEditVal2; encoderCount = (int)editCurrent * 4; lastEncoderCount = (int)editCurrent; }
        else { *pEditVal2 = editCurrent; updateBottomMenu("RANGE", "SAVED"); pushToCloud(); goBack(); }
     } else if (uiState == STATE_EDIT_TIME) {
-       if(editStep < 10) { if(editStep==3) { tempOffM = (int)editCurrent; timeOnHour = tempOnH; timeOnMinute=tempOnM; timeOffHour=tempOffH; timeOffMinute=tempOffM; updateBottomMenu("SCHEDULE", "SAVED"); pushToCloud(); goBack(); } else { editStep++; if(editStep==1) editCurrent=tempOnM; if(editStep==2) editCurrent=tempOffH; if(editStep==3) editCurrent=tempOffM; } }
-       else { if(editStep==11) { currentMinute=(int)editCurrent; updateBottomMenu("CLOCK", "UPDATED"); goBack(); } else { editStep++; editCurrent=currentMinute; } }
-       encoderCount = (int)editCurrent * 4; lastEncoderCount = (int)editCurrent; delay(200);
+       // FIXED: Proper state transitions saving value before switching
+       if (editStep < 10) {
+         if (editStep == 0) {
+           tempOnH = (int)editCurrent;
+           editStep = 1;
+           editCurrent = tempOnM;
+         } else if (editStep == 1) {
+           tempOnM = (int)editCurrent;
+           editStep = 2;
+           editCurrent = tempOffH;
+         } else if (editStep == 2) {
+           tempOffH = (int)editCurrent;
+           editStep = 3;
+           editCurrent = tempOffM;
+         } else {
+           tempOffM = (int)editCurrent;
+           timeOnHour = tempOnH;
+           timeOnMinute = tempOnM;
+           timeOffHour = tempOffH;
+           timeOffMinute = tempOffM;
+           updateBottomMenu("SCHEDULE", "SAVED");
+           pushToCloud();
+           goBack();
+         }
+         encoderCount = (int)editCurrent * 4;
+         lastEncoderCount = (int)editCurrent;
+         delay(200);
+       } else {
+         if (editStep == 10) {
+           currentHour = (int)editCurrent;
+           editStep = 11;
+           editCurrent = currentMinute;
+         } else {
+           currentMinute = (int)editCurrent;
+           updateBottomMenu("CLOCK", "UPDATED");
+           goBack();
+         }
+         encoderCount = (int)editCurrent * 4;
+         lastEncoderCount = (int)editCurrent;
+         delay(200);
+       }
     } else if (uiState == STATE_EDIT_LUX) { luxThreshold = (long)editCurrent; updateBottomMenu("LUX LIMIT", "SAVED"); pushToCloud(); goBack();
     } else if (uiState == STATE_EDIT_BRIGHTNESS) { updateBottomMenu("BRIGHTNESS", "SAVED"); pushToCloud(); goBack();
     } else if (uiState == STATE_SENSOR_TEST) { goBack(); }
