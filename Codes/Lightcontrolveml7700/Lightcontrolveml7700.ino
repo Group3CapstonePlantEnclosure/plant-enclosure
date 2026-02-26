@@ -3,41 +3,43 @@
 
 Adafruit_VEML7700 veml;
 
-const int LED_GATE_PIN = 9;
+const int LED_GATE_PIN = 9; // PWM pin
 
 // ---- User settings ----
-unsigned long onTimeMs = 10UL * 1000UL;  // default 10s for testing
-float luxOnThreshold  = 200.0;           // dark if <= this  -> turn ON
-float luxOffThreshold = 300.0;           // bright if >= this -> turn OFF (hysteresis)
+float lowLuxThreshold  = 150.0;  // Turn ON below this
+float highLuxThreshold = 250.0;  // Turn OFF above this
 
-// ---- State machine ----
-enum State { LED_OFF, LED_ON_WINDOW };
-State state = LED_OFF;
+// ---- Brightness levels ----
+int level = 3;  // default level
 
-unsigned long windowEndMs = 0;
-
-void forceOffNow() {
-  pinMode(LED_GATE_PIN, OUTPUT);
-  digitalWrite(LED_GATE_PIN, LOW);
-  state = LED_OFF;
+int pwmForLevel(int lvl) {
+  if (lvl == 1) return 25;  // Low
+  if (lvl == 2) return 150;  // Mid
+  return 255;                // Full brightness
 }
 
-void ledOnStartWindow(unsigned long nowMs) {
-  digitalWrite(LED_GATE_PIN, HIGH);
-  state = LED_ON_WINDOW;
-  windowEndMs = nowMs + onTimeMs;
+// ---- State ----
+bool ledOn = false;
+
+void applyPwm(int pwm) {
+  analogWrite(LED_GATE_PIN, constrain(pwm, 0, 255));
 }
 
-void ledOff() {
-  digitalWrite(LED_GATE_PIN, LOW);
-  state = LED_OFF;
+void turnOn() {
+  int pwm = pwmForLevel(level);
+  applyPwm(pwm);
+  ledOn = true;
+
+  Serial.print("LED ON | Lux below ");
+  Serial.println(lowLuxThreshold);
 }
 
-void printHelp() {
-  Serial.println("Commands (Newline line ending):");
-  Serial.println("  t <sec>   -> set ON window duration, e.g. t 10");
-  Serial.println("  th <lux>  -> set ON threshold (dark), e.g. th 200");
-  Serial.println("  st <lux>  -> set OFF threshold (bright), e.g. st 300");
+void turnOff() {
+  applyPwm(0);
+  ledOn = false;
+
+  Serial.print("LED OFF | Lux above ");
+  Serial.println(highLuxThreshold);
 }
 
 void handleSerial() {
@@ -47,97 +49,98 @@ void handleSerial() {
   cmd.trim();
   if (cmd.length() == 0) return;
 
-  if (cmd == "help") { printHelp(); return; }
+  if (cmd == "help") {
+    Serial.println("Commands:");
+    Serial.println("  low <lux>   -> turn ON below this");
+    Serial.println("  high <lux>  -> turn OFF above this");
+    Serial.println("  lvl <1|2|3> -> brightness level");
+    Serial.println("  show        -> show settings");
+    return;
+  }
+
+  if (cmd == "show") {
+    Serial.print("Low threshold: ");
+    Serial.println(lowLuxThreshold);
+    Serial.print("High threshold: ");
+    Serial.println(highLuxThreshold);
+    Serial.print("Level: ");
+    Serial.println(level);
+    Serial.print("PWM: ");
+    Serial.println(pwmForLevel(level));
+    return;
+  }
 
   int sp = cmd.indexOf(' ');
   String key = (sp == -1) ? cmd : cmd.substring(0, sp);
   String val = (sp == -1) ? ""  : cmd.substring(sp + 1);
-  key.trim(); val.trim();
+  key.trim(); 
+  val.trim();
 
-  if (key == "t") {
-    long sec = val.toInt();
-    if (sec > 0) {
-      onTimeMs = (unsigned long)sec * 1000UL;
-      Serial.print("Timer window = "); Serial.print(sec); Serial.println(" s");
-    } else Serial.println("Usage: t <sec>");
-  } else if (key == "th") {
+  if (key == "low") {
     float v = val.toFloat();
     if (v >= 0) {
-      luxOnThreshold = v;
-      Serial.print("luxOnThreshold = "); Serial.println(luxOnThreshold);
-    } else Serial.println("Usage: th <lux>");
-  } else if (key == "st") {
-    float v = val.toFloat();
-    if (v >= 0) {
-      luxOffThreshold = v;
-      Serial.print("luxOffThreshold = "); Serial.println(luxOffThreshold);
-    } else Serial.println("Usage: st <lux>");
-  } else {
-    Serial.println("Unknown. Type help");
+      lowLuxThreshold = v;
+      Serial.print("Low threshold set to ");
+      Serial.println(lowLuxThreshold);
+    }
   }
+  else if (key == "high") {
+    float v = val.toFloat();
+    if (v >= 0) {
+      highLuxThreshold = v;
+      Serial.print("High threshold set to ");
+      Serial.println(highLuxThreshold);
+    }
+  }
+  else if (key == "lvl") {
+    int lv = val.toInt();
+    if (lv >= 1 && lv <= 3) {
+      level = lv;
+      Serial.print("Level set to ");
+      Serial.println(level);
 
-  // Keep hysteresis sane
-  if (luxOffThreshold < luxOnThreshold) {
-    float tmp = luxOffThreshold;
-    luxOffThreshold = luxOnThreshold;
-    luxOnThreshold = tmp;
-    Serial.println("Swapped thresholds so OFF >= ON.");
+      if (ledOn) {
+        applyPwm(pwmForLevel(level));
+      }
+    }
+  }
+  else {
+    Serial.println("Unknown command. Type: help");
   }
 }
 
 void setup() {
-  // Guarantee OFF at boot
-  forceOffNow();
+  pinMode(LED_GATE_PIN, OUTPUT);
+  applyPwm(0);
 
-  Serial.begin(9600);
+  Serial.begin(115200);
   while (!Serial) delay(10);
 
   Wire.begin();
   if (!veml.begin()) {
     Serial.println("ERROR: VEML7700 not found.");
-    while (1) delay(100);
+    while (1);
   }
 
   veml.setGain(VEML7700_GAIN_1);
   veml.setIntegrationTime(VEML7700_IT_100MS);
 
-  Serial.println("Ready. LED starts OFF.");
-  printHelp();
+  Serial.println("Ready.");
+  Serial.println("Low lux -> ON | High lux -> OFF");
 }
 
 void loop() {
   handleSerial();
 
-  unsigned long nowMs = millis();
   float lux = veml.readLux();
 
-  if (state == LED_OFF) {
-    // Only turn on if it's dark enough
-    if (lux <= luxOnThreshold) {
-      ledOnStartWindow(nowMs);
-      // Optional: uncomment if you want a message when it turns on
-      // Serial.print("ON window started. Lux: "); Serial.println(lux);
-    }
-  } 
-  else if (state == LED_ON_WINDOW) {
-    // Do nothing until the timer ends, then decide based on brightness/darkness
-    if ((long)(nowMs - windowEndMs) >= 0) {
-      // Timer ended: decide next state based on current lux
-      if (lux >= luxOffThreshold) {
-        ledOff();
-        Serial.print("OFF (timer end, bright). Lux: ");
-        Serial.println(lux);
-      } else if (lux <= luxOnThreshold) {
-        // Still dark: start another window
-        ledOnStartWindow(nowMs);
-        // Optional: uncomment if you want a message when it extends
-        // Serial.print("EXTEND (timer end, still dark). Lux: "); Serial.println(lux);
-      } else {
-        // In between thresholds: hold OFF to prevent chatter
-        ledOff();
-        Serial.print("OFF (timer end, in-between). Lux: ");
-        Serial.println(lux);
-      }
-    }
+  if (!ledOn && lux <= lowLuxThreshold) {
+    turnOn();
   }
+
+  if (ledOn && lux >= highLuxThreshold) {
+    turnOff();
+  }
+
+  delay(100);
 }
