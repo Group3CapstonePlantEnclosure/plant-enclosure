@@ -101,29 +101,29 @@
             const data = snapshot.val();
             if (data && data.tempLow !== undefined) {
                 
-                // --- NEW LIVE DATA LOGIC ---
-                // If live data exists, display it as the main value and move targets to the sub-label
-                if (data.liveTemp !== undefined) {
-                    document.getElementById("dispTemp").textContent = `${data.liveTemp}°F`;
-                    document.getElementById("dispTemp").previousElementSibling.textContent = "Current Temp";
-                    document.getElementById("dispTemp").nextElementSibling.textContent = `Target: ${data.tempLow}° - ${data.tempHigh}°`;
-                    
-                    document.getElementById("dispHum").textContent = `${data.liveHum}%`;
-                    document.getElementById("dispHum").previousElementSibling.textContent = "Current Humidity";
-                    document.getElementById("dispHum").nextElementSibling.textContent = `Target: ${data.humLow}% - ${data.humHigh}%`;
+                // --- PERMANENT LIVE DATA LAYOUT ---
+                
+                // 1. Force the top labels to indicate "Current" live readings
+                document.getElementById("dispTemp").previousElementSibling.textContent = "Current Temp";
+                document.getElementById("dispHum").previousElementSibling.textContent = "Current Humidity";
+                document.getElementById("dispSoil").previousElementSibling.textContent = "Current Soil Moisture";
+                document.getElementById("dispLux").previousElementSibling.textContent = "Current Light";
 
-                    document.getElementById("dispLux").textContent = `${data.liveLux} lux`;
-                    document.getElementById("dispLux").previousElementSibling.textContent = "Current Light";
-                    document.getElementById("dispLux").nextElementSibling.textContent = `Limit: ${data.luxThreshold} lux`;
-                } else {
-                    // Fallback to original behavior if no live data is found yet
-                    document.getElementById("dispTemp").textContent = `${data.tempLow}°F - ${data.tempHigh}°F`;
-                    document.getElementById("dispHum").textContent = `${data.humLow}% - ${data.humHigh}%`;
-                    document.getElementById("dispLux").textContent = `${data.luxThreshold} lux`;
-                }
-                // ---------------------------
+                // 2. Display live data as the BIG text (or "--" if ESP32 hasn't sent it yet)
+                document.getElementById("dispTemp").textContent = data.liveTemp !== undefined ? `${data.liveTemp}°F` : "-- °F";
+                document.getElementById("dispHum").textContent = data.liveHum !== undefined ? `${data.liveHum}%` : "-- %";
+                document.getElementById("dispSoil").textContent = data.liveSoil !== undefined ? `${data.liveSoil}%` : "-- %";
+                document.getElementById("dispLux").textContent = data.liveLux !== undefined ? `${data.liveLux} lux` : "-- lux";
 
-                document.getElementById("dispSoil").textContent = `${data.soilLow}% - ${data.soilHigh}%`;
+                // 3. Display target ranges as the SMALL sub-text
+                document.getElementById("dispTemp").nextElementSibling.textContent = `Target: ${data.tempLow}° - ${data.tempHigh}°`;
+                document.getElementById("dispHum").nextElementSibling.textContent = `Target: ${data.humLow}% - ${data.humHigh}%`;
+                document.getElementById("dispSoil").nextElementSibling.textContent = `Target: ${data.soilLow}% - ${data.soilHigh}%`;
+                document.getElementById("dispLux").nextElementSibling.textContent = `Limit: ${data.luxThreshold} lux`;
+
+                // ----------------------------------
+
+                // Update settings like Brightness and Timer
                 document.getElementById("dispBright").textContent = `${data.globalBrightness || 10}/10`;
                 
                 let onH = window.formatAMPM(data.timeOnHour);
@@ -134,6 +134,7 @@
                 tState.textContent = data.timerEnabled ? "Timer Active" : "Timer Disabled";
                 tState.style.color = data.timerEnabled ? "#2cff8a" : "var(--muted)";
                 
+                // Show dashboard
                 document.getElementById("loading").style.display = "none";
                 document.getElementById("dashboard").style.display = "grid";
                 document.getElementById("actions").style.display = "grid";
