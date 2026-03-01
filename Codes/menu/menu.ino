@@ -8,6 +8,10 @@
 #include <HTTPClient.h>
 #include <time.h>
 
+// --- MULTITASKING GLOBALS ---
+TaskHandle_t CloudTaskHandle;
+volatile bool triggerCloudPush = false;
+
 // --- SERIAL COMMUNICATION CONFIG ---
 #define RXD2 16
 #define TXD2 17
@@ -95,7 +99,10 @@ static uint8_t old_AB = 0;
 
 // --- SERIAL PARSER & LIVE CLOUD UPLOAD ---
 void pushLiveDataToCloud() {
-  if (WiFi.status() != WL_CONNECTED) return;
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Upload Failed: WiFi not connected.");
+    return;
+  }
   
   HTTPClient http; 
   http.begin(firebaseURL); // Patches into the same settings.json path
@@ -109,11 +116,16 @@ void pushLiveDataToCloud() {
   String jsonOutput; 
   serializeJson(doc, jsonOutput); 
   
+  Serial.print("Attempting to push Live Data: ");
+  Serial.println(jsonOutput);
+
   int httpCode = http.sendRequest("PATCH", jsonOutput);
+  
   if (httpCode > 0) {
-    // Optionally log success to serial, but kept quiet to avoid spamming
+    Serial.println("Firebase Success! HTTP Code: " + String(httpCode));
   } else {
-    sysLog("Failed to push live data: " + String(httpCode));
+    Serial.println("Firebase Failed! Error: " + http.errorToString(httpCode));
+    sysLog("Failed to push live data: " + http.errorToString(httpCode));
   }
   http.end(); 
 }
@@ -142,8 +154,8 @@ void checkSerialSensors() {
   }
 
   // Push to Firebase only when a new packet has arrived (every ~5 seconds)
-  if (newDataReceived) {
-    pushLiveDataToCloud();
+if (newDataReceived) {
+    externalUpdateReceived = true; // <--- ADD THIS LINE
   }
 }
 
@@ -177,6 +189,13 @@ void setTimeZone(int offset, String name) {
 void IRAM_ATTR readEncoder() {
   old_AB <<= 2; old_AB |= ((digitalRead(ENC_CLK) << 1) | digitalRead(ENC_DT));
   old_AB &= 0x0f; if (enc_states[old_AB]) encoderCount += enc_states[old_AB];
+}
+volatile bool isrBtnClicked = false;
+volatile unsigned long isrBtnTime = 0;
+volatile bool btnTriggered = false;
+
+void IRAM_ATTR readButton() {
+  btnTriggered = true; // Just flip a flag and get out!
 }
 
 void sysLog(String msg) {
@@ -296,16 +315,19 @@ void showHoverContext(const char* itemName) {
   String valLine = "";
   
   if (name == "Temperature") {
-    valLine = "L:" + String((int)tempLow) + "\xb0 H:" + String((int)tempHigh) + "\xb0";
+    // Shows: "72.5° | L:68° H:77°"
+    valLine = String(liveTemp, 1) + "\xb0 | L:" + String((int)tempLow) + "\xb0 H:" + String((int)tempHigh) + "\xb0";
   } 
   else if (name == "Humidity") {
-    valLine = "L:" + String((int)humLow) + "% H:" + String((int)humHigh) + "%";
+    // Shows: "45% | L:40% H:80%"
+    valLine = String(liveHum, 0) + "% | L:" + String((int)humLow) + "% H:" + String((int)humHigh) + "%";
   } 
   else if (name == "Soil Moisture") {
     valLine = "L:" + String((int)soilLow) + "% H:" + String((int)soilHigh) + "%";
   } 
   else if (name == "Light Control") {
-    valLine = getCountdownStr();
+    // Shows: "3500lx | On: 2h 30m"
+    valLine = String(liveLux, 0) + "lx | " + getCountdownStr();
   } 
   else if (name == "pH Level") {
     valLine = "Current: 7.0";
@@ -328,7 +350,8 @@ void showHoverContext(const char* itemName) {
     valLine = timerEnabled ? "Status: ON" : "Status: OFF";
   } 
   else if (name == "Set Clock") {
-    int h = currentHour % 12; if (h == 0) h = 12;
+    int h = currentHour % 12;
+    if (h == 0) h = 12;
     String m = (currentMinute < 10) ? "0" + String(currentMinute) : String(currentMinute);
     String ampm = currentHour < 12 ? " AM" : " PM";
     valLine = "Time: " + String(h) + ":" + m + ampm;
@@ -646,6 +669,36 @@ void pushToCloud() {
   if (httpCode > 0) updateBottomMenu("Cloud Update", "Successful!"); else updateBottomMenu("Cloud Error", String(httpCode));
   http.end(); delay(1000); lastMenuIdx = -1;
 }
+// ==========================================
+// CORE 0: BACKGROUND CLOUD TASK
+// ==========================================
+void cloudTask(void * parameter) {
+  for (;;) {
+    // 1. If WiFi drops, just wait a bit and check again
+    if (WiFi.status() != WL_CONNECTED) {
+      vTaskDelay(2000 / portTICK_PERIOD_MS); 
+      continue;
+    }
+
+    // 2. Check if the UI requested a settings push (User changed a setting)
+    if (triggerCloudPush) {
+      pushToCloud();
+      triggerCloudPush = false;
+    }
+
+    // 3. Periodic Background Sync (Fetch settings + Push Live Data)
+    // Runs automatically every 10 seconds without freezing the UI!
+    static unsigned long lastCore0Sync = 0;
+    if (millis() - lastCore0Sync > 10000) {
+      lastCore0Sync = millis();
+      syncWithCloudSilent(); // Fetch settings
+      pushLiveDataToCloud(); // Push SHT4x/VEML data
+    }
+
+    // Feed the watchdog timer so Core 0 doesn't crash
+    vTaskDelay(100 / portTICK_PERIOD_MS); 
+  }
+}
 
 // --- SETUP ---
 void setup() {
@@ -657,6 +710,7 @@ void setup() {
   pinMode(ENC_CLK, INPUT); pinMode(ENC_DT, INPUT); pinMode(ENC_SW, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(ENC_CLK), readEncoder, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENC_DT), readEncoder, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ENC_SW), readButton, FALLING);
   Wire.begin(I2C_SDA, I2C_SCL);
   topDisplay.setBusClock(I2CBusClock); bottomDisplay.setBusClock(I2CBusClock);
   bottomDisplay.setI2CAddress(BOTTOM_ADDR * 2); bottomDisplay.begin();
@@ -685,19 +739,47 @@ void setup() {
   currentMenu = mainMenu; 
   currentMenuSize = 6; 
   lastMinuteTick = millis();
+// Pin the cloudTask to Core 0 (0 is background, 1 is Arduino loop)
+  xTaskCreatePinnedToCore(cloudTask, "CloudTask", 8192, NULL, 1, &CloudTaskHandle, 0);
 }
 
 void loop() {
+  // 1. Process Button Clicks IMMEDIATELY (Priority)
+  static unsigned long lastBtnTime = 0;
+  bool clicked = false;
+
+  if (btnTriggered) {
+    btnTriggered = false;
+    if (millis() - lastBtnTime > 250) {
+      clicked = true;
+      lastBtnTime = millis();
+      Serial.println(">>> DEBUG: Encoder Clicked!"); 
+    }
+  }
+
+  // 2. System Tasks
   updateClock();
   
-  // Check for incoming sensor data endlessly
+  // 3. Sensor & Logic 
   checkSerialSensors();
+  
+  static unsigned long lastLogicCheck = 0;
+  if (millis() - lastLogicCheck > 5000) {
+    lastLogicCheck = millis();
+    evaluateControlLogic();
+  }
 
+  // 4. Encoder Rotation logic
   bool uiNeedsDraw = false;
-  int rawEnc = encoderCount; int currentEnc = rawEnc / 4; int diff = lastEncoderCount - currentEnc;
+  int rawEnc = encoderCount; 
+  int currentEnc = rawEnc / 4; 
+  int diff = lastEncoderCount - currentEnc;
 
   if (diff != 0) {
-    lastEncoderCount = currentEnc; uiNeedsDraw = true; lastEncoderMoveTime = millis();
+    lastEncoderCount = currentEnc; 
+    uiNeedsDraw = true; 
+    lastEncoderMoveTime = millis();
+    
     if (uiState == STATE_MENU || uiState == STATE_SUBMENU || uiState == STATE_WIFI_SELECT) {
       selectedIndex += diff;
       if (selectedIndex < 0) selectedIndex = currentMenuSize - 1;
@@ -719,9 +801,7 @@ void loop() {
     }
   }
 
-  static unsigned long lastBtnTime = 0; bool clicked = false;
-  if (digitalRead(ENC_SW) == LOW) { if (millis() - lastBtnTime > 250) { clicked = true; lastBtnTime = millis(); } }
-
+  // 5. Button Action Logic
   if (clicked) {
     uiNeedsDraw = true; lastEncoderMoveTime = millis();
     if (uiState == STATE_MENU || uiState == STATE_SUBMENU) {
@@ -734,58 +814,31 @@ void loop() {
       else goBack();
     } else if (uiState == STATE_EDIT_DUAL) {
        if (editStep == 0) { *pEditVal1 = editCurrent; editStep = 1; editCurrent = *pEditVal2; encoderCount = (int)editCurrent * 4; lastEncoderCount = (int)editCurrent; }
-       else { *pEditVal2 = editCurrent; updateBottomMenu("RANGE", "SAVED"); pushToCloud(); goBack(); }
+       else { *pEditVal2 = editCurrent; updateBottomMenu("RANGE", "SAVED"); triggerCloudPush = true; goBack(); }
     } else if (uiState == STATE_EDIT_TIME) {
-       // FIXED: Proper state transitions saving value before switching
        if (editStep < 10) {
-         if (editStep == 0) {
-           tempOnH = (int)editCurrent;
-           editStep = 1;
-           editCurrent = tempOnM;
-         } else if (editStep == 1) {
-           tempOnM = (int)editCurrent;
-           editStep = 2;
-           editCurrent = tempOffH;
-         } else if (editStep == 2) {
-           tempOffH = (int)editCurrent;
-           editStep = 3;
-           editCurrent = tempOffM;
-         } else {
-           tempOffM = (int)editCurrent;
-           timeOnHour = tempOnH;
-           timeOnMinute = tempOnM;
-           timeOffHour = tempOffH;
-           timeOffMinute = tempOffM;
-           updateBottomMenu("SCHEDULE", "SAVED");
-           pushToCloud();
-           goBack();
+         if (editStep == 0) { tempOnH = (int)editCurrent; editStep = 1; editCurrent = tempOnM; } 
+         else if (editStep == 1) { tempOnM = (int)editCurrent; editStep = 2; editCurrent = tempOffH; } 
+         else if (editStep == 2) { tempOffH = (int)editCurrent; editStep = 3; editCurrent = tempOffM; } 
+         else {
+           tempOffM = (int)editCurrent; timeOnHour = tempOnH; timeOnMinute = tempOnM; timeOffHour = tempOffH; timeOffMinute = tempOffM;
+           updateBottomMenu("SCHEDULE", "SAVED"); triggerCloudPush = true; goBack();
          }
-         encoderCount = (int)editCurrent * 4;
-         lastEncoderCount = (int)editCurrent;
-         delay(200);
+         encoderCount = (int)editCurrent * 4; lastEncoderCount = (int)editCurrent; delay(200);
        } else {
-         if (editStep == 10) {
-           currentHour = (int)editCurrent;
-           editStep = 11;
-           editCurrent = currentMinute;
-         } else {
-           currentMinute = (int)editCurrent;
-           updateBottomMenu("CLOCK", "UPDATED");
-           goBack();
-         }
-         encoderCount = (int)editCurrent * 4;
-         lastEncoderCount = (int)editCurrent;
-         delay(200);
+         if (editStep == 10) { currentHour = (int)editCurrent; editStep = 11; editCurrent = currentMinute; } 
+         else { currentMinute = (int)editCurrent; updateBottomMenu("CLOCK", "UPDATED"); goBack(); }
+         encoderCount = (int)editCurrent * 4; lastEncoderCount = (int)editCurrent; delay(200);
        }
-    } else if (uiState == STATE_EDIT_LUX) { luxThreshold = (long)editCurrent; updateBottomMenu("LUX LIMIT", "SAVED"); pushToCloud(); goBack();
-    } else if (uiState == STATE_EDIT_BRIGHTNESS) { updateBottomMenu("BRIGHTNESS", "SAVED"); pushToCloud(); goBack();
+    } else if (uiState == STATE_EDIT_LUX) { luxThreshold = (long)editCurrent; updateBottomMenu("LUX LIMIT", "SAVED"); triggerCloudPush = true; goBack();
+    } else if (uiState == STATE_EDIT_BRIGHTNESS) { updateBottomMenu("BRIGHTNESS", "SAVED"); triggerCloudPush = true; goBack();
     } else if (uiState == STATE_SENSOR_TEST) { goBack(); }
   }
 
+  // 6. UI Drawing Logic
   static int lastMinDraw = -1;
   if (externalUpdateReceived || (currentMinute != lastMinDraw)) { uiNeedsDraw = true; externalUpdateReceived = false; lastMinDraw = currentMinute; }
   if (showingTempMsg && millis() > bottomMsgTimeout) { showingTempMsg = false; lastMenuIdx = -1; uiNeedsDraw = true; }
-  if (millis() - lastCloudCheck > 3000) { lastCloudCheck = millis(); if (millis() - lastEncoderMoveTime > 3000) { syncWithCloudSilent(); } }
 
   static unsigned long lastBleUpdate = 0;
   if (uiState == STATE_SENSOR_TEST && millis() - lastBleUpdate > 1000) { uiNeedsDraw = true; lastBleUpdate = millis(); }
@@ -798,24 +851,18 @@ void loop() {
       for (int i = 0; i < currentMenuSize; i++) {
         if (i >= menuScrollOffset && i < menuScrollOffset + VISIBLE_ITEMS) {
           int y = 28 + ((i - menuScrollOffset) * 12);
-          
-          // --- FIXED: Dynamic Timer Label Logic ---
           String label = currentMenu[i].name;
           if (label.startsWith("Timer")) label = timerEnabled ? "Timer: ON" : "Timer: OFF";
 
           if (i == selectedIndex) { 
-            topDisplay.setFont(u8g2_font_7x14B_tf); 
-            topDisplay.drawStr(0, y, ">"); 
-            topDisplay.drawStr(10, y, label.c_str()); 
-          }
-          else { 
-            topDisplay.setFont(u8g2_font_6x10_tf); 
-            topDisplay.drawStr(10, y, label.c_str()); 
+            topDisplay.setFont(u8g2_font_7x14B_tf); topDisplay.drawStr(0, y, ">"); topDisplay.drawStr(10, y, label.c_str()); 
+          } else { 
+            topDisplay.setFont(u8g2_font_6x10_tf); topDisplay.drawStr(10, y, label.c_str()); 
           }
         }
       }
       topDisplay.sendBuffer();
-      if (selectedIndex != lastMenuIdx && !showingTempMsg) { showHoverContext(currentMenu[selectedIndex].name); lastMenuIdx = selectedIndex; }
+      if (!showingTempMsg) { showHoverContext(currentMenu[selectedIndex].name); lastMenuIdx = selectedIndex; }
     } 
     else if (uiState == STATE_WIFI_SELECT) {
       topDisplay.clearBuffer(); topDisplay.setFont(u8g2_font_6x10_tf);
@@ -849,5 +896,54 @@ void loop() {
     } else if (uiState == STATE_EDIT_LUX) drawLuxEdit((long)editCurrent);
     else if (uiState == STATE_EDIT_BRIGHTNESS) drawBrightnessEdit((int)editCurrent);
     else if (uiState == STATE_SENSOR_TEST) drawSensorTest();
+  }
+}
+
+// --- MASTER CONTROL LOGIC ---
+void evaluateControlLogic() {
+  if (WiFi.status() != WL_CONNECTED && millis() < 10000) return; // Wait for boot
+
+  // 1. Peltier Heating/Cooling Logic
+  if (liveTemp > tempHigh) {
+    Serial2.println("CMD:COOL");
+  } else if (liveTemp < tempLow) {
+    Serial2.println("CMD:HEAT");
+  } else {
+    Serial2.println("CMD:PELTIER_OFF");
+  }
+
+  // 2. Light Control Logic (Based on Lux Threshold & Timer)
+  bool turnLightOn = false;
+  
+  // If light is lower than the threshold, we want it on. 
+  if (liveLux < luxThreshold) {
+    turnLightOn = true;
+  }
+
+  // If timer is enabled, respect the schedule!
+  if (timerEnabled) {
+    int nowMins = (currentHour * 60) + currentMinute;
+    int onMins = (timeOnHour * 60) + timeOnMinute;
+    int offMins = (timeOffHour * 60) + timeOffMinute;
+    
+    bool insideSchedule = false;
+    if (timeOnHour < timeOffHour) {
+      if (nowMins >= onMins && nowMins < offMins) insideSchedule = true;
+    } else {
+      if (nowMins >= onMins || nowMins < offMins) insideSchedule = true;
+    }
+    
+    // Only allow the light to turn on if we are inside the scheduled timer window
+    if (!insideSchedule) turnLightOn = false; 
+  }
+
+  // 3. Send Light Command
+  if (turnLightOn) {
+    // Map the 1-10 menu brightness to a 0-255 PWM signal for the Arduino
+    int pwmVal = map(globalBrightness, 1, 10, 25, 255);
+    Serial2.print("CMD:LIGHT,");
+    Serial2.println(pwmVal);
+  } else {
+    Serial2.println("CMD:LIGHT,0"); // Turn off
   }
 }
