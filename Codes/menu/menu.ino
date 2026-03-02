@@ -262,16 +262,30 @@ void updateClock() {
 }
 
 String getCountdownStr() {
-  if (!timerEnabled) return "Disabled";
+  if (!timerEnabled) return "Timer: OFF"; // Shortened for fit
+  
   int nowMins = (currentHour * 60) + currentMinute;
   int onMins = (timeOnHour * 60) + timeOnMinute;
   int offMins = (timeOffHour * 60) + timeOffMinute;
+  
   bool isLightOn = false;
-  if (timeOnHour < timeOffHour) { if (nowMins >= onMins && nowMins < offMins) isLightOn = true; } 
-  else { if (nowMins >= onMins || nowMins < offMins) isLightOn = true; }
+  
+  if (onMins < offMins) {
+    if (nowMins >= onMins && nowMins < offMins) isLightOn = true;
+  } else if (onMins > offMins) {
+    if (nowMins >= onMins || nowMins < offMins) isLightOn = true;
+  }
+  
   int diff = (isLightOn ? offMins : onMins) - nowMins;
-  if (diff < 0) diff += 1440;
-  return (isLightOn ? "Off: " : "On: ") + String(diff / 60) + "h " + ((diff % 60 < 10) ? "0" : "") + String(diff % 60) + "m";
+  if (diff <= 0) diff += 1440; 
+  
+  int h = diff / 60;
+  int m = diff % 60;
+  
+  // FIX: Shortened format to fit the 128px OLED screen
+  String timeStr = String(h) + "h" + (m < 10 ? "0" : "") + String(m) + "m";
+  
+  return isLightOn ? "ON for " + timeStr : "OFF for " + timeStr;
 }
 
 int getCenterX(U8G2& display, String text) { return (display.getDisplayWidth() - display.getStrWidth(text.c_str())) / 2; }
@@ -463,7 +477,7 @@ void startEditTemp() { uiState = STATE_EDIT_DUAL; editStep = 0; pEditVal1 = &tem
 void startEditHum() {  uiState = STATE_EDIT_DUAL; editStep = 0; pEditVal1 = &humLow; pEditVal2 = &humHigh; currentMinLimit = 0.0; currentMaxLimit = 100.0; editUnit = "%"; editCurrent = *pEditVal1; encoderCount = (int)editCurrent * 4; lastEncoderCount = (int)editCurrent; lastValDisp = -999; }
 void startEditSoil() { uiState = STATE_EDIT_DUAL; editStep = 0; pEditVal1 = &soilLow; pEditVal2 = &soilHigh; currentMinLimit = 0.0; currentMaxLimit = 100.0; editUnit = "%"; editCurrent = *pEditVal1; encoderCount = (int)editCurrent * 4; lastEncoderCount = (int)editCurrent; lastValDisp = -999; }
 void startEditSchedule() { uiState = STATE_EDIT_TIME; editStep = 0; tempOnH = timeOnHour; tempOnM = timeOnMinute; tempOffH = timeOffHour; tempOffM = timeOffMinute; editCurrent = tempOnH; encoderCount = (int)editCurrent * 4; lastEncoderCount = (int)editCurrent; }
-void toggleTimer() { if (!timerEnabled) { timerEnabled = true; startEditSchedule(); } else { timerEnabled = false; updateBottomMenu("Timer", "Disabled"); triggerCloudPush = true; delay(800); } }
+void toggleTimer() { if (!timerEnabled) { timerEnabled = true; startEditSchedule(); } else {timerEnabled = false; updateBottomMenu("Timer", "Disabled"); triggerCloudPush = true; delay(800); }}
 void startSetClock() { uiState = STATE_EDIT_TIME; editStep = 10; editCurrent = currentHour; encoderCount = (int)editCurrent * 4; lastEncoderCount = (int)editCurrent; }
 void startEditLux() { uiState = STATE_EDIT_LUX; editCurrent = luxThreshold; encoderCount = (luxThreshold / 100) * 4; lastEncoderCount = encoderCount / 4; }
 void startEditBrightness() { uiState = STATE_EDIT_BRIGHTNESS; editCurrent = globalBrightness; encoderCount = globalBrightness * 4; lastEncoderCount = globalBrightness; }
@@ -663,22 +677,31 @@ void evaluateControlLogic() {
     Serial2.println("CMD:PELTIER_OFF");
   }
 
-  // 2. Light Control Logic (Based on Lux Threshold & Timer)
+  // 2. Light Control Logic
   bool turnLightOn = false;
+  
+  // Base condition: Turn on if it's too dark
   if (liveLux < luxThreshold) {
     turnLightOn = true;
   }
+
+  // Timer condition: OVERRIDES everything else
   if (timerEnabled) {
     int nowMins = (currentHour * 60) + currentMinute;
     int onMins = (timeOnHour * 60) + timeOnMinute;
     int offMins = (timeOffHour * 60) + timeOffMinute;
     bool insideSchedule = false;
-    if (timeOnHour < timeOffHour) {
+    
+    if (onMins < offMins) {
       if (nowMins >= onMins && nowMins < offMins) insideSchedule = true;
-    } else {
+    } else if (onMins > offMins) {
       if (nowMins >= onMins || nowMins < offMins) insideSchedule = true;
     }
-    if (!insideSchedule) turnLightOn = false; 
+    
+    // If timer is on, but we are outside the hours, FORCE the light off
+    if (!insideSchedule) {
+      turnLightOn = false; 
+    }
   }
 
   // 3. Send Light Command
@@ -687,7 +710,7 @@ void evaluateControlLogic() {
     Serial2.print("CMD:LIGHT,");
     Serial2.println(pwmVal);
   } else {
-    Serial2.println("CMD:LIGHT,0"); // Turn off
+    Serial2.println("CMD:LIGHT,0"); 
   }
 }
 
@@ -698,13 +721,16 @@ void setup() {
   // INIT SERIAL FOR ARDUINO R4 COMMUNICATION
   Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
   
-  // Notice we only attach interrupts to CLK and DT. The SW pin is back to polling!
-  pinMode(ENC_CLK, INPUT); pinMode(ENC_DT, INPUT); pinMode(ENC_SW, INPUT_PULLUP);
+  // Use interrupts for rotation (fast), but Polling for Button (reliable)
+  pinMode(ENC_CLK, INPUT); 
+  pinMode(ENC_DT, INPUT); 
+  pinMode(ENC_SW, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(ENC_CLK), readEncoder, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENC_DT), readEncoder, CHANGE);
   
   Wire.begin(I2C_SDA, I2C_SCL);
-  topDisplay.setBusClock(I2CBusClock); bottomDisplay.setBusClock(I2CBusClock);
+  topDisplay.setBusClock(I2CBusClock); 
+  bottomDisplay.setBusClock(I2CBusClock);
   bottomDisplay.setI2CAddress(BOTTOM_ADDR * 2); bottomDisplay.begin();
   topDisplay.setI2CAddress(TOP_ADDR * 2); topDisplay.begin();
   applyBrightness(globalBrightness);
@@ -732,7 +758,7 @@ void setup() {
   currentMenuSize = 6; 
   lastMinuteTick = millis();
 
-  // Pin the cloudTask to Core 0 (0 is background, 1 is Arduino loop)
+  // Create the Background Internet Task on Core 0
   xTaskCreatePinnedToCore(cloudTask, "CloudTask", 8192, NULL, 1, &CloudTaskHandle, 0);
 }
 
