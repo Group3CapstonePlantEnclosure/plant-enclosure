@@ -105,7 +105,7 @@ void pushLiveDataToCloud() {
   }
   
   HTTPClient http; 
-  http.begin(firebaseURL); 
+  http.begin(firebaseURL); // Patches into the same settings.json path
   http.addHeader("Content-Type", "application/json");
   
   StaticJsonDocument<200> doc; 
@@ -116,7 +116,11 @@ void pushLiveDataToCloud() {
   String jsonOutput; 
   serializeJson(doc, jsonOutput); 
   
+  Serial.print("Attempting to push Live Data: ");
+  Serial.println(jsonOutput);
+
   int httpCode = http.sendRequest("PATCH", jsonOutput);
+  
   if (httpCode > 0) {
     Serial.println("Firebase Success! HTTP Code: " + String(httpCode));
   } else {
@@ -144,13 +148,14 @@ void checkSerialSensors() {
         liveHum = data.substring(hIndex + 2, comma2).toFloat();
         liveLux = data.substring(lIndex + 2).toFloat();
         lastSerialRecv = millis();
-        newDataReceived = true; 
+        newDataReceived = true; // Flag that we got fresh data
       }
     }
   }
 
-  if (newDataReceived) {
-    externalUpdateReceived = true; 
+  // Push to Firebase only when a new packet has arrived (every ~5 seconds)
+if (newDataReceived) {
+    externalUpdateReceived = true; // <--- ADD THIS LINE
   }
 }
 
@@ -175,7 +180,7 @@ void setTimeZone(int offset, String name) {
   timeZoneOffset = offset;
   configTime(timeZoneOffset * 3600, 0, "pool.ntp.org", "time.nist.gov");
   updateBottomMenu("Time Zone", name);
-  triggerCloudPush = true; // Tell Core 0 to save it
+  pushToCloud();
   delay(1500);
   goBack();
 }
@@ -184,6 +189,13 @@ void setTimeZone(int offset, String name) {
 void IRAM_ATTR readEncoder() {
   old_AB <<= 2; old_AB |= ((digitalRead(ENC_CLK) << 1) | digitalRead(ENC_DT));
   old_AB &= 0x0f; if (enc_states[old_AB]) encoderCount += enc_states[old_AB];
+}
+volatile bool isrBtnClicked = false;
+volatile unsigned long isrBtnTime = 0;
+volatile bool btnTriggered = false;
+
+void IRAM_ATTR readButton() {
+  btnTriggered = true; // Just flip a flag and get out!
 }
 
 void sysLog(String msg) {
@@ -207,6 +219,7 @@ MenuItem wifiItems[] = {
   { "Back", nullptr, nullptr, 0 } 
 };
 
+// Time Zone Menu
 MenuItem timeZoneItems[] = {
   { "EST (Eastern)", setEST, nullptr, 0 },
   { "CST (Central)", setCST, nullptr, 0 },
@@ -262,30 +275,16 @@ void updateClock() {
 }
 
 String getCountdownStr() {
-  if (!timerEnabled) return "Timer: OFF"; // Shortened for fit
-  
+  if (!timerEnabled) return "Disabled";
   int nowMins = (currentHour * 60) + currentMinute;
   int onMins = (timeOnHour * 60) + timeOnMinute;
   int offMins = (timeOffHour * 60) + timeOffMinute;
-  
   bool isLightOn = false;
-  
-  if (onMins < offMins) {
-    if (nowMins >= onMins && nowMins < offMins) isLightOn = true;
-  } else if (onMins > offMins) {
-    if (nowMins >= onMins || nowMins < offMins) isLightOn = true;
-  }
-  
+  if (timeOnHour < timeOffHour) { if (nowMins >= onMins && nowMins < offMins) isLightOn = true; } 
+  else { if (nowMins >= onMins || nowMins < offMins) isLightOn = true; }
   int diff = (isLightOn ? offMins : onMins) - nowMins;
-  if (diff <= 0) diff += 1440; 
-  
-  int h = diff / 60;
-  int m = diff % 60;
-  
-  // FIX: Shortened format to fit the 128px OLED screen
-  String timeStr = String(h) + "h" + (m < 10 ? "0" : "") + String(m) + "m";
-  
-  return isLightOn ? "ON for " + timeStr : "OFF for " + timeStr;
+  if (diff < 0) diff += 1440;
+  return (isLightOn ? "Off: " : "On: ") + String(diff / 60) + "h " + ((diff % 60 < 10) ? "0" : "") + String(diff % 60) + "m";
 }
 
 int getCenterX(U8G2& display, String text) { return (display.getDisplayWidth() - display.getStrWidth(text.c_str())) / 2; }
@@ -315,27 +314,54 @@ void showHoverContext(const char* itemName) {
   String name = String(itemName);
   String valLine = "";
   
-  if (name == "Temperature") valLine = String(liveTemp, 1) + "\xb0 | L:" + String((int)tempLow) + "\xb0 H:" + String((int)tempHigh) + "\xb0";
-  else if (name == "Humidity") valLine = String(liveHum, 0) + "% | L:" + String((int)humLow) + "% H:" + String((int)humHigh) + "%";
-  else if (name == "Soil Moisture") valLine = "L:" + String((int)soilLow) + "% H:" + String((int)soilHigh) + "%";
-  else if (name == "Light Control") valLine = String(liveLux, 0) + "lx | " + getCountdownStr();
-  else if (name == "pH Level") valLine = "Current: 7.0";
-  else if (name == "Settings") valLine = "System Setup";
-  else if (name == "Connections") valLine = (WiFi.status() == WL_CONNECTED) ? "WiFi: ON" : "WiFi: OFF";
-  else if (name == "Time Zone") valLine = "UTC " + String(timeZoneOffset);
+  if (name == "Temperature") {
+    // Shows: "72.5° | L:68° H:77°"
+    valLine = String(liveTemp, 1) + "\xb0 | L:" + String((int)tempLow) + "\xb0 H:" + String((int)tempHigh) + "\xb0";
+  } 
+  else if (name == "Humidity") {
+    // Shows: "45% | L:40% H:80%"
+    valLine = String(liveHum, 0) + "% | L:" + String((int)humLow) + "% H:" + String((int)humHigh) + "%";
+  } 
+  else if (name == "Soil Moisture") {
+    valLine = "L:" + String((int)soilLow) + "% H:" + String((int)soilHigh) + "%";
+  } 
+  else if (name == "Light Control") {
+    // Shows: "3500lx | On: 2h 30m"
+    valLine = String(liveLux, 0) + "lx | " + getCountdownStr();
+  } 
+  else if (name == "pH Level") {
+    valLine = "Current: 7.0";
+  } 
+  else if (name == "Settings") {
+    valLine = "System Setup";
+  } 
+  else if (name == "Connections") {
+    valLine = (WiFi.status() == WL_CONNECTED) ? "WiFi: ON" : "WiFi: OFF";
+  }
+  else if (name == "Time Zone") {
+    valLine = "UTC " + String(timeZoneOffset);
+  }
   else if (name == "EST (Eastern)") valLine = getPreviewTime(-5);
   else if (name == "CST (Central)") valLine = getPreviewTime(-6);
   else if (name == "MST (Mountain)") valLine = getPreviewTime(-7);
   else if (name == "PST (Pacific)") valLine = getPreviewTime(-8);
   else if (name == "UTC") valLine = getPreviewTime(0);
-  else if (String(itemName).startsWith("Timer")) valLine = timerEnabled ? "Status: ON" : "Status: OFF";
-  else if (name == "Set Clock") {
-    int h = currentHour % 12; if (h == 0) h = 12;
-    String m = (currentMinute < 10) ? "0" + String(currentMinute) : String(currentMinute);
-    valLine = "Time: " + String(h) + ":" + m + (currentHour < 12 ? " AM" : " PM");
+  else if (String(itemName).startsWith("Timer")) {
+    valLine = timerEnabled ? "Status: ON" : "Status: OFF";
   } 
-  else if (name == "Brightness") valLine = "Level: " + String(globalBrightness) + "/10";
-  else valLine = "Select to Edit";
+  else if (name == "Set Clock") {
+    int h = currentHour % 12;
+    if (h == 0) h = 12;
+    String m = (currentMinute < 10) ? "0" + String(currentMinute) : String(currentMinute);
+    String ampm = currentHour < 12 ? " AM" : " PM";
+    valLine = "Time: " + String(h) + ":" + m + ampm;
+  } 
+  else if (name == "Brightness") {
+    valLine = "Level: " + String(globalBrightness) + "/10";
+  } 
+  else {
+    valLine = "Select to Edit";
+  }
   
   updateBottomMenu(name, valLine);
 }
@@ -443,6 +469,7 @@ void configModeCallback(WiFiManager* myWiFiManager) {
   bottomDisplay.sendBuffer();
 }
 
+// Non-Blocking WiFi Setup
 void startWiFiSetup() {
   WiFiManager wm;
   wm.setAPCallback(configModeCallback);
@@ -477,14 +504,15 @@ void startEditTemp() { uiState = STATE_EDIT_DUAL; editStep = 0; pEditVal1 = &tem
 void startEditHum() {  uiState = STATE_EDIT_DUAL; editStep = 0; pEditVal1 = &humLow; pEditVal2 = &humHigh; currentMinLimit = 0.0; currentMaxLimit = 100.0; editUnit = "%"; editCurrent = *pEditVal1; encoderCount = (int)editCurrent * 4; lastEncoderCount = (int)editCurrent; lastValDisp = -999; }
 void startEditSoil() { uiState = STATE_EDIT_DUAL; editStep = 0; pEditVal1 = &soilLow; pEditVal2 = &soilHigh; currentMinLimit = 0.0; currentMaxLimit = 100.0; editUnit = "%"; editCurrent = *pEditVal1; encoderCount = (int)editCurrent * 4; lastEncoderCount = (int)editCurrent; lastValDisp = -999; }
 void startEditSchedule() { uiState = STATE_EDIT_TIME; editStep = 0; tempOnH = timeOnHour; tempOnM = timeOnMinute; tempOffH = timeOffHour; tempOffM = timeOffMinute; editCurrent = tempOnH; encoderCount = (int)editCurrent * 4; lastEncoderCount = (int)editCurrent; }
-void toggleTimer() { if (!timerEnabled) { timerEnabled = true; startEditSchedule(); } else {timerEnabled = false; updateBottomMenu("Timer", "Disabled"); triggerCloudPush = true; delay(800); }}
+void toggleTimer() { if (!timerEnabled) { timerEnabled = true; startEditSchedule(); } else { timerEnabled = false; updateBottomMenu("Timer", "Disabled"); pushToCloud(); delay(800); } }
 void startSetClock() { uiState = STATE_EDIT_TIME; editStep = 10; editCurrent = currentHour; encoderCount = (int)editCurrent * 4; lastEncoderCount = (int)editCurrent; }
 void startEditLux() { uiState = STATE_EDIT_LUX; editCurrent = luxThreshold; encoderCount = (luxThreshold / 100) * 4; lastEncoderCount = encoderCount / 4; }
 void startEditBrightness() { uiState = STATE_EDIT_BRIGHTNESS; editCurrent = globalBrightness; encoderCount = globalBrightness * 4; lastEncoderCount = globalBrightness; }
-void resetGlobal() { tempLow = 68.0; tempHigh = 77.0; humLow = 50.0; humHigh = 60.0; soilLow = 40; soilHigh = 60; timeOnHour = 8; timeOnMinute = 0; timeOffHour = 20; timeOffMinute = 0; luxThreshold = 50000; timerEnabled = false; globalBrightness = 10; applyBrightness(globalBrightness); updateBottomMenu("Defaults", "Restored"); triggerCloudPush = true; delay(1500); lastMenuIdx = -1; }
+void resetGlobal() { tempLow = 68.0; tempHigh = 77.0; humLow = 50.0; humHigh = 60.0; soilLow = 40; soilHigh = 60; timeOnHour = 8; timeOnMinute = 0; timeOffHour = 20; timeOffMinute = 0; luxThreshold = 50000; timerEnabled = false; globalBrightness = 10; applyBrightness(globalBrightness); updateBottomMenu("Defaults", "Restored"); pushToCloud(); delay(1500); lastMenuIdx = -1; }
 void showPH() { updateBottomMenu("pH: 7.0", "Sensor OK"); delay(2000); lastMenuIdx = -1; }
 void startSensorTest() { uiState = STATE_SENSOR_TEST; }
 
+// --- NETWORK SELECT ---
 void startWiFiSelect() { uiState = STATE_WIFI_SELECT; currentMenuSize = (sizeof(myNetworks) / sizeof(myNetworks[0])) + 1; selectedIndex = 0; menuScrollOffset = 0; currentHeaderName = "KNOWN NETWORKS"; lastMenuIdx = -1; encoderCount = 0; lastEncoderCount = 0; }
 void attemptConnection(const char* ssid, const char* pass) {
   updateBottomMenu("Connecting to:", String(ssid)); 
@@ -503,6 +531,7 @@ void attemptConnection(const char* ssid, const char* pass) {
 
 void triggerESPReset() { updateBottomMenu("REBOOTING", "Please wait..."); sysLog("Manual hardware reset."); delay(1000); ESP.restart(); }
 
+// --- NAV & CLOUD ---
 void goBack() {
   if (stackDepth == 0) { 
     currentMenu = mainMenu; 
@@ -521,7 +550,7 @@ void enterSubMenu(MenuItem* item) {
 }
 
 // ==========================================
-// CLOUD SYNC & COMMAND PROCESSING
+// CLOUD SYNC & COMMAND PROCESSING (MERGED)
 // ==========================================
 void syncWithCloud() { if (WiFi.status() != WL_CONNECTED) return; updateBottomMenu("Syncing...", "Fetching Cloud"); sysLog("Cloud sync..."); syncWithCloudSilent(); }
 
@@ -533,6 +562,9 @@ void syncWithCloudSilent() {
     String payload = http.getString(); DynamicJsonDocument doc(2048); deserializeJson(doc, payload);
     bool changed = false;
 
+    // --- 1. HANDLE REMOTE COMMANDS (PRIORITY) ---
+    
+    // Reboot Command
     if (doc.containsKey("reboot_cmd") && doc["reboot_cmd"].as<bool>() == true) {
       sysLog("Cloud Restart Command Received! Rebooting...");
       updateBottomMenu("REMOTE REBOOT", "PLEASE WAIT");
@@ -541,6 +573,7 @@ void syncWithCloudSilent() {
       delay(1000); ESP.restart();
     }
 
+    // Fetch Logs Command
     if (doc.containsKey("fetch_logs_cmd") && doc["fetch_logs_cmd"].as<bool>() == true) {
       sysLog("Web Dashboard requested log dump.");
       DynamicJsonDocument logDoc(2048);
@@ -551,6 +584,7 @@ void syncWithCloudSilent() {
       patchHttp.sendRequest("PATCH", logJson); patchHttp.end();
     }
 
+    // Global Reset Command
     if (doc.containsKey("global_reset_cmd") && doc["global_reset_cmd"].as<bool>() == true) {
       sysLog("Web Command: Global Reset Initiated.");
       updateBottomMenu("GLOBAL RESET", "PLEASE WAIT");
@@ -559,6 +593,7 @@ void syncWithCloudSilent() {
       patchHttp.sendRequest("PATCH", "{\"global_reset_cmd\":false}"); patchHttp.end();
     }
 
+    // Sensor Test Command
     if (doc.containsKey("sensor_test_cmd") && doc["sensor_test_cmd"].as<bool>() == true) {
       sysLog("Web Command: Sensor Test Display.");
       uiState = STATE_SENSOR_TEST;
@@ -566,6 +601,7 @@ void syncWithCloudSilent() {
       patchHttp.sendRequest("PATCH", "{\"sensor_test_cmd\":false}"); patchHttp.end();
     }
 
+    // --- 2. HANDLE SETTINGS SYNC ---
     if (doc.containsKey("tempLow") && tempLow != doc["tempLow"].as<float>()) { tempLow = doc["tempLow"]; changed = true; }
     if (doc.containsKey("tempHigh") && tempHigh != doc["tempHigh"].as<float>()) { tempHigh = doc["tempHigh"]; changed = true; }
     if (doc.containsKey("humLow") && humLow != doc["humLow"].as<float>()) { humLow = doc["humLow"]; changed = true; }
@@ -574,15 +610,23 @@ void syncWithCloudSilent() {
     if (doc.containsKey("soilHigh") && soilHigh != doc["soilHigh"].as<float>()) { soilHigh = doc["soilHigh"]; changed = true; }
     if (doc.containsKey("timeOnHour") && timeOnHour != doc["timeOnHour"].as<int>()) { timeOnHour = doc["timeOnHour"]; changed = true; }
     if (doc.containsKey("timeOffHour") && timeOffHour != doc["timeOffHour"].as<int>()) { timeOffHour = doc["timeOffHour"]; changed = true; }
+    
+    // --- FIXED: ADDED MINUTE SYNC HERE ---
     if (doc.containsKey("timeOnMinute") && timeOnMinute != doc["timeOnMinute"].as<int>()) { timeOnMinute = doc["timeOnMinute"]; changed = true; }
     if (doc.containsKey("timeOffMinute") && timeOffMinute != doc["timeOffMinute"].as<int>()) { timeOffMinute = doc["timeOffMinute"]; changed = true; }
+    // ------------------------------------
+
     if (doc.containsKey("luxThreshold") && luxThreshold != doc["luxThreshold"].as<long>()) { luxThreshold = doc["luxThreshold"]; changed = true; }
     if (doc.containsKey("timerEnabled") && timerEnabled != doc["timerEnabled"].as<bool>()) { timerEnabled = doc["timerEnabled"]; changed = true; }
+    
+    // TimeZone Sync
     if (doc.containsKey("timeZoneOffset") && timeZoneOffset != doc["timeZoneOffset"].as<int>()) { 
       timeZoneOffset = doc["timeZoneOffset"]; 
       configTime(timeZoneOffset * 3600, 0, "pool.ntp.org", "time.nist.gov");
       changed = true; 
     }
+
+    // Brightness Sync
     if (doc.containsKey("globalBrightness") && globalBrightness != doc["globalBrightness"].as<int>()) { 
       globalBrightness = doc["globalBrightness"]; 
       applyBrightness(globalBrightness); 
@@ -602,7 +646,7 @@ void syncWithCloudSilent() {
 
 void pushToCloud() {
   if (WiFi.status() != WL_CONNECTED) return;
-  updateBottomMenu("Saving...", "To Cloud");
+  updateBottomMenu("Saving to Cloud", "Please wait...");
   HTTPClient http; http.begin(firebaseURL); http.addHeader("Content-Type", "application/json");
   StaticJsonDocument<512> doc; 
   doc["tempLow"] = tempLow; doc["tempHigh"] = tempHigh; 
@@ -610,8 +654,12 @@ void pushToCloud() {
   doc["soilLow"] = soilLow; doc["soilHigh"] = soilHigh; 
   doc["timeOnHour"] = timeOnHour; 
   doc["timeOffHour"] = timeOffHour;
+  
+  // --- FIXED: ADDED MINUTE SYNC HERE ---
   doc["timeOnMinute"] = timeOnMinute;
   doc["timeOffMinute"] = timeOffMinute;
+  // -------------------------------------
+
   doc["luxThreshold"] = luxThreshold; 
   doc["timerEnabled"] = timerEnabled;
   doc["timeZoneOffset"] = timeZoneOffset;
@@ -621,7 +669,6 @@ void pushToCloud() {
   if (httpCode > 0) updateBottomMenu("Cloud Update", "Successful!"); else updateBottomMenu("Cloud Error", String(httpCode));
   http.end(); delay(1000); lastMenuIdx = -1;
 }
-
 // ==========================================
 // CORE 0: BACKGROUND CLOUD TASK
 // ==========================================
@@ -640,77 +687,16 @@ void cloudTask(void * parameter) {
     }
 
     // 3. Periodic Background Sync (Fetch settings + Push Live Data)
+    // Runs automatically every 10 seconds without freezing the UI!
     static unsigned long lastCore0Sync = 0;
     if (millis() - lastCore0Sync > 10000) {
       lastCore0Sync = millis();
-      
-      // --- FIX: Check if the user is actively changing a setting on the screen ---
-      bool userIsEditing = (uiState == STATE_EDIT_DUAL || 
-                            uiState == STATE_EDIT_TIME || 
-                            uiState == STATE_EDIT_LUX || 
-                            uiState == STATE_EDIT_BRIGHTNESS);
-      
-      // Only fetch cloud settings if the user is safely in a normal menu
-      if (!userIsEditing) {
-        syncWithCloudSilent(); 
-      }
-      
-      // Always push the live temperature/humidity/lux data to the dashboard
-      pushLiveDataToCloud(); 
+      syncWithCloudSilent(); // Fetch settings
+      pushLiveDataToCloud(); // Push SHT4x/VEML data
     }
 
     // Feed the watchdog timer so Core 0 doesn't crash
     vTaskDelay(100 / portTICK_PERIOD_MS); 
-  }
-}
-
-// --- MASTER CONTROL LOGIC ---
-void evaluateControlLogic() {
-  if (WiFi.status() != WL_CONNECTED && millis() < 10000) return; // Wait for boot
-
-  // 1. Peltier Heating/Cooling Logic
-  if (liveTemp > tempHigh) {
-    Serial2.println("CMD:COOL");
-  } else if (liveTemp < tempLow) {
-    Serial2.println("CMD:HEAT");
-  } else {
-    Serial2.println("CMD:PELTIER_OFF");
-  }
-
-  // 2. Light Control Logic
-  bool turnLightOn = false;
-  
-  // Base condition: Turn on if it's too dark
-  if (liveLux < luxThreshold) {
-    turnLightOn = true;
-  }
-
-  // Timer condition: OVERRIDES everything else
-  if (timerEnabled) {
-    int nowMins = (currentHour * 60) + currentMinute;
-    int onMins = (timeOnHour * 60) + timeOnMinute;
-    int offMins = (timeOffHour * 60) + timeOffMinute;
-    bool insideSchedule = false;
-    
-    if (onMins < offMins) {
-      if (nowMins >= onMins && nowMins < offMins) insideSchedule = true;
-    } else if (onMins > offMins) {
-      if (nowMins >= onMins || nowMins < offMins) insideSchedule = true;
-    }
-    
-    // If timer is on, but we are outside the hours, FORCE the light off
-    if (!insideSchedule) {
-      turnLightOn = false; 
-    }
-  }
-
-  // 3. Send Light Command
-  if (turnLightOn) {
-    int pwmVal = map(globalBrightness, 1, 10, 25, 255);
-    Serial2.print("CMD:LIGHT,");
-    Serial2.println(pwmVal);
-  } else {
-    Serial2.println("CMD:LIGHT,0"); 
   }
 }
 
@@ -721,16 +707,12 @@ void setup() {
   // INIT SERIAL FOR ARDUINO R4 COMMUNICATION
   Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
   
-  // Use interrupts for rotation (fast), but Polling for Button (reliable)
-  pinMode(ENC_CLK, INPUT); 
-  pinMode(ENC_DT, INPUT); 
-  pinMode(ENC_SW, INPUT_PULLUP);
+  pinMode(ENC_CLK, INPUT); pinMode(ENC_DT, INPUT); pinMode(ENC_SW, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(ENC_CLK), readEncoder, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENC_DT), readEncoder, CHANGE);
-  
+  attachInterrupt(digitalPinToInterrupt(ENC_SW), readButton, FALLING);
   Wire.begin(I2C_SDA, I2C_SCL);
-  topDisplay.setBusClock(I2CBusClock); 
-  bottomDisplay.setBusClock(I2CBusClock);
+  topDisplay.setBusClock(I2CBusClock); bottomDisplay.setBusClock(I2CBusClock);
   bottomDisplay.setI2CAddress(BOTTOM_ADDR * 2); bottomDisplay.begin();
   topDisplay.setI2CAddress(TOP_ADDR * 2); topDisplay.begin();
   applyBrightness(globalBrightness);
@@ -749,7 +731,7 @@ void setup() {
   if (connected) {
     updateBottomMenu("Connected!", WiFi.localIP().toString());
     configTime(timeZoneOffset * 3600, 0, "pool.ntp.org", "time.nist.gov");
-    syncWithCloudSilent();
+    syncWithCloud();
   } else {
     updateBottomMenu("Offline Mode", "Starting UI...");
   }
@@ -757,14 +739,28 @@ void setup() {
   currentMenu = mainMenu; 
   currentMenuSize = 6; 
   lastMinuteTick = millis();
-
-  // Create the Background Internet Task on Core 0
+// Pin the cloudTask to Core 0 (0 is background, 1 is Arduino loop)
   xTaskCreatePinnedToCore(cloudTask, "CloudTask", 8192, NULL, 1, &CloudTaskHandle, 0);
 }
 
 void loop() {
-  // 1. Process System Tasks
+  // 1. Process Button Clicks IMMEDIATELY (Priority)
+  static unsigned long lastBtnTime = 0;
+  bool clicked = false;
+
+  if (btnTriggered) {
+    btnTriggered = false;
+    if (millis() - lastBtnTime > 250) {
+      clicked = true;
+      lastBtnTime = millis();
+      Serial.println(">>> DEBUG: Encoder Clicked!"); 
+    }
+  }
+
+  // 2. System Tasks
   updateClock();
+  
+  // 3. Sensor & Logic 
   checkSerialSensors();
   
   static unsigned long lastLogicCheck = 0;
@@ -773,14 +769,17 @@ void loop() {
     evaluateControlLogic();
   }
 
-  // 2. Encoder Rotation logic
+  // 4. Encoder Rotation logic
   bool uiNeedsDraw = false;
   int rawEnc = encoderCount; 
   int currentEnc = rawEnc / 4; 
   int diff = lastEncoderCount - currentEnc;
 
   if (diff != 0) {
-    lastEncoderCount = currentEnc; uiNeedsDraw = true; lastEncoderMoveTime = millis();
+    lastEncoderCount = currentEnc; 
+    uiNeedsDraw = true; 
+    lastEncoderMoveTime = millis();
+    
     if (uiState == STATE_MENU || uiState == STATE_SUBMENU || uiState == STATE_WIFI_SELECT) {
       selectedIndex += diff;
       if (selectedIndex < 0) selectedIndex = currentMenuSize - 1;
@@ -802,18 +801,7 @@ void loop() {
     }
   }
 
-  // 3. --- RESTORED WORKING BUTTON POLLING ---
-  static unsigned long lastBtnTime = 0; 
-  bool clicked = false;
-  
-  if (digitalRead(ENC_SW) == LOW) { 
-    if (millis() - lastBtnTime > 250) { 
-      clicked = true; 
-      lastBtnTime = millis(); 
-    } 
-  }
-
-  // 4. Handle Clicks
+  // 5. Button Action Logic
   if (clicked) {
     uiNeedsDraw = true; lastEncoderMoveTime = millis();
     if (uiState == STATE_MENU || uiState == STATE_SUBMENU) {
@@ -847,7 +835,7 @@ void loop() {
     } else if (uiState == STATE_SENSOR_TEST) { goBack(); }
   }
 
-  // 5. UI Drawing Logic
+  // 6. UI Drawing Logic
   static int lastMinDraw = -1;
   if (externalUpdateReceived || (currentMinute != lastMinDraw)) { uiNeedsDraw = true; externalUpdateReceived = false; lastMinDraw = currentMinute; }
   if (showingTempMsg && millis() > bottomMsgTimeout) { showingTempMsg = false; lastMenuIdx = -1; uiNeedsDraw = true; }
@@ -908,5 +896,54 @@ void loop() {
     } else if (uiState == STATE_EDIT_LUX) drawLuxEdit((long)editCurrent);
     else if (uiState == STATE_EDIT_BRIGHTNESS) drawBrightnessEdit((int)editCurrent);
     else if (uiState == STATE_SENSOR_TEST) drawSensorTest();
+  }
+}
+
+// --- MASTER CONTROL LOGIC ---
+void evaluateControlLogic() {
+  if (WiFi.status() != WL_CONNECTED && millis() < 10000) return; // Wait for boot
+
+  // 1. Peltier Heating/Cooling Logic
+  if (liveTemp > tempHigh) {
+    Serial2.println("CMD:COOL");
+  } else if (liveTemp < tempLow) {
+    Serial2.println("CMD:HEAT");
+  } else {
+    Serial2.println("CMD:PELTIER_OFF");
+  }
+
+  // 2. Light Control Logic (Based on Lux Threshold & Timer)
+  bool turnLightOn = false;
+  
+  // If light is lower than the threshold, we want it on. 
+  if (liveLux < luxThreshold) {
+    turnLightOn = true;
+  }
+
+  // If timer is enabled, respect the schedule!
+  if (timerEnabled) {
+    int nowMins = (currentHour * 60) + currentMinute;
+    int onMins = (timeOnHour * 60) + timeOnMinute;
+    int offMins = (timeOffHour * 60) + timeOffMinute;
+    
+    bool insideSchedule = false;
+    if (timeOnHour < timeOffHour) {
+      if (nowMins >= onMins && nowMins < offMins) insideSchedule = true;
+    } else {
+      if (nowMins >= onMins || nowMins < offMins) insideSchedule = true;
+    }
+    
+    // Only allow the light to turn on if we are inside the scheduled timer window
+    if (!insideSchedule) turnLightOn = false; 
+  }
+
+  // 3. Send Light Command
+  if (turnLightOn) {
+    // Map the 1-10 menu brightness to a 0-255 PWM signal for the Arduino
+    int pwmVal = map(globalBrightness, 1, 10, 25, 255);
+    Serial2.print("CMD:LIGHT,");
+    Serial2.println(pwmVal);
+  } else {
+    Serial2.println("CMD:LIGHT,0"); // Turn off
   }
 }
