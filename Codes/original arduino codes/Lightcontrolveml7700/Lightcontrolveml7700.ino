@@ -14,7 +14,7 @@ int level = 3;  // default level
 
 int pwmForLevel(int lvl) {
   if (lvl == 1) return 25;  // Low
-  if (lvl == 2) return 150;  // Mid
+  if (lvl == 2) return 100;  // Mid
   return 255;                // Full brightness
 }
 
