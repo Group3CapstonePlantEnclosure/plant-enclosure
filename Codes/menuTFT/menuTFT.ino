@@ -12,6 +12,17 @@
 #include <Adafruit_ILI9341.h>
 #include <XPT2046_Touchscreen.h>
 
+// --- DASHBOARD UI VARIABLES ---
+lv_obj_t * temp_label;
+lv_obj_t * hum_label;
+lv_obj_t * lux_label;
+
+// --- WIFI SETUP UI VARIABLES ---
+lv_obj_t * wifi_list;
+lv_obj_t * pwd_ta;
+lv_obj_t * kb;
+char selected_ssid[64];
+
 // --- PIN DEFINITIONS (From your working sketch) ---
 #define TFT_DC    9
 #define TFT_CS    10
@@ -78,16 +89,73 @@ void my_touchpad_read(lv_indev_t *indev, lv_indev_data_t *data) {
   }
 }
 
+// Timer callback to update the dashboard labels every second
+void update_dashboard_timer_cb(lv_timer_t * timer) {
+  // Only update if the labels exist
+  if (temp_label && hum_label && lux_label) {
+    char buf[32];
+    
+    snprintf(buf, sizeof(buf), "Temp: %.1f °F", liveTemp);
+    lv_label_set_text(temp_label, buf);
+    
+    snprintf(buf, sizeof(buf), "Humidity: %.0f %%", liveHum);
+    lv_label_set_text(hum_label, buf);
+    
+    snprintf(buf, sizeof(buf), "Light: %.0f lux", liveLux);
+    lv_label_set_text(lux_label, buf);
+  }
+}
+
+// Callback for the WiFi scan button
+static void scan_wifi_btn_cb(lv_event_t * e) {
+  build_wifi_scanner_ui();
+}
+
 // ==========================================
 // UI & LOGIC
 // ==========================================
 
 void build_lvgl_ui() {
-  // Simple modern dashboard label
-  lv_obj_t * label = lv_label_create(lv_scr_act());
-  lv_label_set_text(label, "S3 Dashboard\nWaiting for Data...");
-  lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+  // 1. Create a Tab View
+  lv_obj_t * tabview = lv_tabview_create(lv_scr_act());
+  
+  // 2. Add 2 Tabs
+  lv_obj_t * tab1 = lv_tabview_add_tab(tabview, "Dashboard");
+  lv_obj_t * tab2 = lv_tabview_add_tab(tabview, "Settings");
+
+  // --- TAB 1: DASHBOARD ---
+  // Temperature
+  temp_label = lv_label_create(tab1);
+  lv_obj_set_style_text_font(temp_label, &lv_font_montserrat_24, 0); // Make it big
+  lv_label_set_text(temp_label, "Temp: --.- °F");
+  lv_obj_align(temp_label, LV_ALIGN_TOP_MID, 0, 20);
+
+  // Humidity
+  hum_label = lv_label_create(tab1);
+  lv_obj_set_style_text_font(hum_label, &lv_font_montserrat_24, 0);
+  lv_label_set_text(hum_label, "Humidity: -- %");
+  lv_obj_align(hum_label, LV_ALIGN_TOP_MID, 0, 60);
+
+  // Lux
+  lux_label = lv_label_create(tab1);
+  lv_obj_set_style_text_font(lux_label, &lv_font_montserrat_24, 0);
+  lv_label_set_text(lux_label, "Light: -- lux");
+  lv_obj_align(lux_label, LV_ALIGN_TOP_MID, 0, 100);
+
+  // Create an LVGL timer to update these labels every 1000ms (1 second)
+  lv_timer_create(update_dashboard_timer_cb, 1000, NULL);
+
+
+  // --- TAB 2: SETTINGS ---
+  // Create a button to launch the WiFi Scanner
+  lv_obj_t * wifi_btn = lv_button_create(tab2);
+  lv_obj_set_size(wifi_btn, 200, 50);
+  lv_obj_align(wifi_btn, LV_ALIGN_TOP_MID, 0, 20);
+  lv_obj_add_event_cb(wifi_btn, scan_wifi_btn_cb, LV_EVENT_CLICKED, NULL);
+
+  lv_obj_t * wifi_btn_label = lv_label_create(wifi_btn);
+  lv_label_set_text(wifi_btn_label, "Scan WiFi Networks");
+  lv_obj_center(wifi_btn_label);
 }
 
 void checkSerialSensors() {
@@ -145,6 +213,78 @@ void cloudTask(void * parameter) {
       }
     }
     vTaskDelay(100 / portTICK_PERIOD_MS);
+  }
+}
+
+// 3. Callback for when the user hits "Enter" on the keyboard
+static void kb_event_cb(lv_event_t * e) {
+  lv_event_code_t code = lv_event_get_code(e);
+  if(code == LV_EVENT_READY) { // User pressed the Checkmark/Enter button
+    const char * password = lv_textarea_get_text(pwd_ta);
+    
+    Serial.print("Attempting to connect to: ");
+    Serial.println(selected_ssid);
+    Serial.print("With Password: ");
+    Serial.println(password);
+
+    // Tell the ESP32 to connect
+    WiFi.disconnect();
+    WiFi.begin(selected_ssid, password);
+    
+    // Clean up the UI
+    lv_obj_del(pwd_ta);
+    lv_obj_del(kb);
+    
+    // You could pop up a "Connecting..." label here!
+  }
+}
+
+// 2. Callback for when a network is tapped in the list
+static void list_btn_event_cb(lv_event_t * e) {
+  lv_event_code_t code = lv_event_get_code(e);
+  if(code == LV_EVENT_CLICKED) {
+    lv_obj_t * btn = (lv_obj_t *)lv_event_get_target(e);
+    const char * ssid = lv_list_get_btn_text(wifi_list, btn);
+    strcpy(selected_ssid, ssid); // Save the clicked network name
+    
+    // Hide the list
+    lv_obj_add_flag(wifi_list, LV_OBJ_FLAG_HIDDEN);
+
+    // Create a text area for the password
+    pwd_ta = lv_textarea_create(lv_scr_act());
+    lv_textarea_set_password_mode(pwd_ta, true); // Hides characters like ***
+    lv_textarea_set_one_line(pwd_ta, true);
+    lv_obj_set_width(pwd_ta, lv_pct(90));
+    lv_obj_align(pwd_ta, LV_ALIGN_TOP_MID, 0, 10);
+    lv_textarea_set_placeholder_text(pwd_ta, "Enter Password");
+
+    // Create the keyboard
+    kb = lv_keyboard_create(lv_scr_act());
+    lv_keyboard_set_textarea(kb, pwd_ta); // Link keyboard to text area
+    lv_obj_add_event_cb(kb, kb_event_cb, LV_EVENT_READY, NULL);
+  }
+}
+
+// 1. Main function to scan and show the UI
+void build_wifi_scanner_ui() {
+  Serial.println("Scanning for networks...");
+  int n = WiFi.scanNetworks();
+  
+  // Create the list widget
+  wifi_list = lv_list_create(lv_scr_act());
+  lv_obj_set_size(wifi_list, lv_pct(100), lv_pct(100));
+  lv_obj_center(wifi_list);
+  
+  lv_list_add_text(wifi_list, "Available Networks");
+
+  if (n == 0) {
+    lv_list_add_text(wifi_list, "No networks found.");
+  } else {
+    for (int i = 0; i < n; ++i) {
+      // Add a button for each network found
+      lv_obj_t * btn = lv_list_add_button(wifi_list, LV_SYMBOL_WIFI, WiFi.SSID(i).c_str());
+      lv_obj_add_event_cb(btn, list_btn_event_cb, LV_EVENT_CLICKED, NULL);
+    }
   }
 }
 
