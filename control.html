@@ -117,18 +117,43 @@
                 <div style="font-size:14px; color:var(--muted)">Enable Grow Light Timer</div>
                 <label class="switch"><input type="checkbox" id="timerEnabled"><span class="slider-tog"></span></label>
             </div>
+            
             <div class="slider-container">
                 <div class="slider-labels"><span>Turn On Time</span> <span class="val" id="onVal">08:00 AM</span></div>
-                <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
-                    <input type="range" id="timeOnHour" min="0" max="23" value="8" oninput="updateSingles()">
+                <div style="display: flex; gap: 15px;">
+                    <div style="flex: 1;">
+                        <div style="font-size: 11px; color: var(--muted); text-align: center; margin-bottom: 5px;">Hour</div>
+                        <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
+                            <input type="range" id="timeOnHour" min="0" max="23" value="8" oninput="updateSingles()">
+                        </div>
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="font-size: 11px; color: var(--muted); text-align: center; margin-bottom: 5px;">Minute</div>
+                        <div class="dual-slider"><div class="slider-track" style="width:100%; opacity: 0.5;"></div>
+                            <input type="range" id="timeOnMinute" min="0" max="59" value="0" oninput="updateSingles()">
+                        </div>
+                    </div>
                 </div>
             </div>
+            
             <div class="slider-container">
                 <div class="slider-labels"><span>Turn Off Time</span> <span class="val" id="offVal">08:00 PM</span></div>
-                <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
-                    <input type="range" id="timeOffHour" min="0" max="23" value="20" oninput="updateSingles()">
+                <div style="display: flex; gap: 15px;">
+                    <div style="flex: 1;">
+                        <div style="font-size: 11px; color: var(--muted); text-align: center; margin-bottom: 5px;">Hour</div>
+                        <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
+                            <input type="range" id="timeOffHour" min="0" max="23" value="20" oninput="updateSingles()">
+                        </div>
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="font-size: 11px; color: var(--muted); text-align: center; margin-bottom: 5px;">Minute</div>
+                        <div class="dual-slider"><div class="slider-track" style="width:100%; opacity: 0.5;"></div>
+                            <input type="range" id="timeOffMinute" min="0" max="59" value="0" oninput="updateSingles()">
+                        </div>
+                    </div>
                 </div>
             </div>
+
             <div class="slider-container" style="margin-bottom:0;">
                 <div class="slider-labels"><span>Lux Auto-on Threshold</span> <span class="val" id="luxVal">30000 lux</span></div>
                 <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
@@ -185,7 +210,9 @@
         const inputs = {
             tempLow: document.getElementById("tempLow"), tempHigh: document.getElementById("tempHigh"),
             humLow: document.getElementById("humLow"), humHigh: document.getElementById("humHigh"), soilLow: document.getElementById("soilLow"),
-            soilHigh: document.getElementById("soilHigh"), timeOnHour: document.getElementById("timeOnHour"), timeOffHour: document.getElementById("timeOffHour"), 
+            soilHigh: document.getElementById("soilHigh"), 
+            timeOnHour: document.getElementById("timeOnHour"), timeOnMinute: document.getElementById("timeOnMinute"),
+            timeOffHour: document.getElementById("timeOffHour"), timeOffMinute: document.getElementById("timeOffMinute"), 
             luxThreshold: document.getElementById("luxThreshold"), timerEnabled: document.getElementById("timerEnabled"), 
             globalBrightness: document.getElementById("globalBrightness"), timeZoneOffset: document.getElementById("timeZoneOffset")
         };
@@ -200,10 +227,11 @@
             }
         }
 
-        window.formatAMPM = function(hour) {
+        window.formatAMPM = function(hour, minute) {
             let h = hour % 12 || 12;
             let ampm = hour < 12 ? 'AM' : 'PM';
-            return `${h}:00 ${ampm}`;
+            let m = minute.toString().padStart(2, '0');
+            return `${h}:${m} ${ampm}`;
         }
 
         window.updateSliders = function(type) {
@@ -221,9 +249,11 @@
 
         window.updateSingles = function() {
             let onH = parseInt(document.getElementById("timeOnHour").value);
+            let onM = parseInt(document.getElementById("timeOnMinute").value);
             let offH = parseInt(document.getElementById("timeOffHour").value);
-            document.getElementById("onVal").textContent = formatAMPM(onH);
-            document.getElementById("offVal").textContent = formatAMPM(offH);
+            let offM = parseInt(document.getElementById("timeOffMinute").value);
+            document.getElementById("onVal").textContent = formatAMPM(onH, onM);
+            document.getElementById("offVal").textContent = formatAMPM(offH, offM);
             document.getElementById("luxVal").textContent = document.getElementById("luxThreshold").value + " lux";
             document.getElementById("brightVal").textContent = document.getElementById("globalBrightness").value + " / 10";
             
@@ -261,7 +291,8 @@
                 tempLow: parseFloat(inputs.tempLow.value), tempHigh: parseFloat(inputs.tempHigh.value),
                 humLow: parseFloat(inputs.humLow.value), humHigh: parseFloat(inputs.humHigh.value),
                 soilLow: parseInt(inputs.soilLow.value), soilHigh: parseInt(inputs.soilHigh.value),
-                timeOnHour: parseInt(inputs.timeOnHour.value), timeOffHour: parseInt(inputs.timeOffHour.value),
+                timeOnHour: parseInt(inputs.timeOnHour.value), timeOnMinute: parseInt(inputs.timeOnMinute.value),
+                timeOffHour: parseInt(inputs.timeOffHour.value), timeOffMinute: parseInt(inputs.timeOffMinute.value),
                 luxThreshold: parseInt(inputs.luxThreshold.value), timerEnabled: inputs.timerEnabled.checked,
                 globalBrightness: parseInt(inputs.globalBrightness.value), timeZoneOffset: parseInt(inputs.timeZoneOffset.value)
             };
