@@ -91,59 +91,49 @@
 
     const settingsRef = ref(db, 'settings');
 
-    // UPDATED: Now accepts both hour and minute
-    window.formatTime = function(hour, minute) {
+    // Helper to format the time correctly with the actual minutes
+    window.formatFullTime = function(hour, minute) {
         let h = hour % 12 || 12;
+        // Ensure minute exists and is padded (e.g., 08 instead of 8)
         let m = minute !== undefined ? minute.toString().padStart(2, '0') : "00";
         let ampm = hour < 12 ? 'AM' : 'PM';
-        return `${h}:${m} ${ampm}`; // Uses a colon, not a period
+        return `${h}:${m} ${ampm}`;
     }
 
     onValue(settingsRef, (snapshot) => {
         const data = snapshot.val();
         if (data && data.tempLow !== undefined) {
             
-            // --- DATA LABELS ---
-            document.getElementById("dispTemp").previousElementSibling.textContent = "Current Temp";
-            document.getElementById("dispHum").previousElementSibling.textContent = "Current Humidity";
-            document.getElementById("dispSoil").previousElementSibling.textContent = "Current Soil Moisture";
-            document.getElementById("dispLux").previousElementSibling.textContent = "Current Light";
-
-            // --- LIVE VALUES ---
+            // --- Current Readings ---
             document.getElementById("dispTemp").textContent = data.liveTemp !== undefined ? `${data.liveTemp}°F` : "-- °F";
             document.getElementById("dispHum").textContent = data.liveHum !== undefined ? `${data.liveHum}%` : "-- %";
             document.getElementById("dispSoil").textContent = data.liveSoil !== undefined ? `${data.liveSoil}%` : "-- %";
             document.getElementById("dispLux").textContent = data.liveLux !== undefined ? `${data.liveLux} lux` : "-- lux";
 
-            // --- TARGET RANGES ---
+            // --- Target Displays ---
             document.getElementById("dispTemp").nextElementSibling.textContent = `Target: ${data.tempLow}° - ${data.tempHigh}°`;
             document.getElementById("dispHum").nextElementSibling.textContent = `Target: ${data.humLow}% - ${data.humHigh}%`;
             document.getElementById("dispSoil").nextElementSibling.textContent = `Target: ${data.soilLow}% - ${data.soilHigh}%`;
             document.getElementById("dispLux").nextElementSibling.textContent = `Limit: ${data.luxThreshold} lux`;
 
-            // --- SYSTEM SETTINGS ---
+            // --- System Settings ---
             document.getElementById("dispBright").textContent = `${data.globalBrightness || 10}/10`;
             
-            // FIXED: Using the new Hour and Minute variables from the DB
-            let onStr = window.formatTime(data.timeOnHour, data.timeOnMin);
-            let offStr = window.formatTime(data.timeOffHour, data.timeOffMin);
-            document.getElementById("dispTime").textContent = `${onStr} to ${offStr}`;
+            // FIX: Pulling the actual minute variables we saved (timeOnMin / timeOffMin)
+            let onTime = window.formatFullTime(data.timeOnHour, data.timeOnMin);
+            let offTime = window.formatFullTime(data.timeOffHour, data.timeOffMin);
+            document.getElementById("dispTime").textContent = `${onTime} to ${offTime}`;
             
             const tState = document.getElementById("dispTimerState");
             tState.textContent = data.timerEnabled ? "Timer Active" : "Timer Disabled";
             tState.style.color = data.timerEnabled ? "#2cff8a" : "var(--muted)";
             
-            // UI Visibility
+            // Show UI
             document.getElementById("loading").style.display = "none";
             document.getElementById("dashboard").style.display = "grid";
             document.getElementById("actions").style.display = "grid";
             document.getElementById("liveTag").style.display = "flex";
-        } else {
-            document.getElementById("loading").innerHTML = "Database is empty. Push settings first!";
         }
-    }, (error) => {
-        console.error("Firebase Read Error:", error);
-        document.getElementById("loading").innerHTML = "❌ Connection Failed.";
     });
 </script>
 </body>
