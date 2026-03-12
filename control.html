@@ -53,15 +53,17 @@
         input:checked + .slider-tog { background-color: var(--c-light); }
         input:checked + .slider-tog:before { transform: translateX(22px); background-color: #000; }
 
+        /* AM/PM Button Styling */
+        .ampm-btn.active { background: var(--c-light) !important; color: #000 !important; border-color: var(--c-light) !important; }
+        .time-input-num { width: 65px; text-align: center; font-size: 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 10px; border-radius: 10px; outline: none; }
+
         .btn-push { position: sticky; bottom: 20px; width: 100%; max-width: 600px; background: rgba(255,255,255,0.95); color: #000; border: none; padding: 18px; border-radius: 16px; font-weight: 700; font-size: 16px; cursor: pointer; box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 10; transition: 0.2s;}
         .btn-push:active { transform: scale(0.98); }
         #statusMsg { text-align: center; font-size: 13px; margin-top: 15px; color: var(--muted); }
 
-        /* Advanced Settings Fold */
         .advanced-toggle { color: var(--muted); font-size: 10pt; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; margin-top: 20px; margin-bottom: 20px; transition: 0.2s; text-align: center; width: 100%; max-width: 600px;}
         .advanced-toggle:hover { color: white; }
 
-        /* Terminal CSS */
         textarea#serialLog { width: 100%; height: 180px; background: #050505; color: var(--c-term); border: 1px solid rgba(0,255,65,0.3); border-radius: 12px; padding: 12px; font-family: monospace; font-size: 12px; resize: none; margin-bottom: 16px; box-sizing: border-box; }
         textarea#serialLog:focus { outline: none; border-color: var(--c-term); }
         .btn-row { display: flex; gap: 10px; }
@@ -117,18 +119,29 @@
                 <div style="font-size:14px; color:var(--muted)">Enable Grow Light Timer</div>
                 <label class="switch"><input type="checkbox" id="timerEnabled"><span class="slider-tog"></span></label>
             </div>
-            <div class="slider-container">
-                <div class="slider-labels"><span>Turn On Time</span> <span class="val" id="onVal">08:00 AM</span></div>
-                <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
-                    <input type="range" id="timeOnHour" min="0" max="23" value="8" oninput="updateSingles()">
+
+            <div style="margin-bottom: 24px;">
+                <div class="slider-labels"><span>Turn On Time</span></div>
+                <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                    <input type="number" id="onTimeNum" min="1" max="12" value="8" class="time-input-num">
+                    <div class="btn-row" style="flex: 1;">
+                        <button class="btn-term ampm-btn" id="onAM" onclick="setPeriod('on', 'AM')">AM</button>
+                        <button class="btn-term ampm-btn" id="onPM" onclick="setPeriod('on', 'PM')">PM</button>
+                    </div>
                 </div>
             </div>
-            <div class="slider-container">
-                <div class="slider-labels"><span>Turn Off Time</span> <span class="val" id="offVal">08:00 PM</span></div>
-                <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
-                    <input type="range" id="timeOffHour" min="0" max="23" value="20" oninput="updateSingles()">
+
+            <div style="margin-bottom: 24px;">
+                <div class="slider-labels"><span>Turn Off Time</span></div>
+                <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                    <input type="number" id="offTimeNum" min="1" max="12" value="8" class="time-input-num">
+                    <div class="btn-row" style="flex: 1;">
+                        <button class="btn-term ampm-btn" id="offAM" onclick="setPeriod('off', 'AM')">AM</button>
+                        <button class="btn-term ampm-btn" id="offPM" onclick="setPeriod('off', 'PM')">PM</button>
+                    </div>
                 </div>
             </div>
+
             <div class="slider-container" style="margin-bottom:0;">
                 <div class="slider-labels"><span>Lux Auto-on Threshold</span> <span class="val" id="luxVal">30000 lux</span></div>
                 <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
@@ -182,10 +195,13 @@
     <script type="module">
         import { db, ref, get, update, onValue } from './firebase-config.js';
 
+        // State for time periods
+        let periods = { on: 'AM', off: 'PM' };
+
         const inputs = {
             tempLow: document.getElementById("tempLow"), tempHigh: document.getElementById("tempHigh"),
-            humLow: document.getElementById("humLow"), humHigh: document.getElementById("humHigh"), soilLow: document.getElementById("soilLow"),
-            soilHigh: document.getElementById("soilHigh"), timeOnHour: document.getElementById("timeOnHour"), timeOffHour: document.getElementById("timeOffHour"), 
+            humLow: document.getElementById("humLow"), humHigh: document.getElementById("humHigh"), 
+            soilLow: document.getElementById("soilLow"), soilHigh: document.getElementById("soilHigh"), 
             luxThreshold: document.getElementById("luxThreshold"), timerEnabled: document.getElementById("timerEnabled"), 
             globalBrightness: document.getElementById("globalBrightness"), timeZoneOffset: document.getElementById("timeZoneOffset")
         };
@@ -200,10 +216,18 @@
             }
         }
 
-        window.formatAMPM = function(hour) {
-            let h = hour % 12 || 12;
-            let ampm = hour < 12 ? 'AM' : 'PM';
-            return `${h}:00 ${ampm}`;
+        window.setPeriod = function(type, p) {
+            periods[type] = p;
+            document.getElementById(type + 'AM').classList.toggle('active', p === 'AM');
+            document.getElementById(type + 'PM').classList.toggle('active', p === 'PM');
+        }
+
+        function get24Hour(id, period) {
+            let h = parseInt(document.getElementById(id).value) || 12;
+            if (h > 12) h = 12; if (h < 1) h = 1;
+            if (period === 'PM' && h < 12) h += 12;
+            if (period === 'AM' && h === 12) h = 0;
+            return h;
         }
 
         window.updateSliders = function(type) {
@@ -220,13 +244,8 @@
         }
 
         window.updateSingles = function() {
-            let onH = parseInt(document.getElementById("timeOnHour").value);
-            let offH = parseInt(document.getElementById("timeOffHour").value);
-            document.getElementById("onVal").textContent = formatAMPM(onH);
-            document.getElementById("offVal").textContent = formatAMPM(offH);
             document.getElementById("luxVal").textContent = document.getElementById("luxThreshold").value + " lux";
             document.getElementById("brightVal").textContent = document.getElementById("globalBrightness").value + " / 10";
-            
             let tz = parseInt(document.getElementById("timeZoneOffset").value);
             document.getElementById("tzVal").textContent = "UTC " + (tz >= 0 ? "+" : "") + tz;
         }
@@ -235,11 +254,22 @@
 
         get(settingsRef).then((snapshot) => {
             const d = snapshot.val();
-            if (d && d.tempLow !== undefined) {
+            if (d) {
                 for (const key in d) { 
                     if (inputs[key] !== undefined) {
                         if (key === 'timerEnabled') inputs[key].checked = d[key];
                         else inputs[key].value = d[key];
+                    }
+                    // Handle time conversions for the new UI
+                    if (key === 'timeOnHour') {
+                        let h = d[key];
+                        setPeriod('on', h >= 12 ? 'PM' : 'AM');
+                        document.getElementById("onTimeNum").value = h % 12 || 12;
+                    }
+                    if (key === 'timeOffHour') {
+                        let h = d[key];
+                        setPeriod('off', h >= 12 ? 'PM' : 'AM');
+                        document.getElementById("offTimeNum").value = h % 12 || 12;
                     }
                 }
             }
@@ -257,11 +287,13 @@
         document.getElementById("sendBtn").addEventListener("click", async () => {
             const sendBtn = document.getElementById("sendBtn"); const statusMsg = document.getElementById("statusMsg");
             sendBtn.disabled = true; sendBtn.textContent = "Syncing with Cloud...";
+            
             const newSettings = {
                 tempLow: parseFloat(inputs.tempLow.value), tempHigh: parseFloat(inputs.tempHigh.value),
                 humLow: parseFloat(inputs.humLow.value), humHigh: parseFloat(inputs.humHigh.value),
                 soilLow: parseInt(inputs.soilLow.value), soilHigh: parseInt(inputs.soilHigh.value),
-                timeOnHour: parseInt(inputs.timeOnHour.value), timeOffHour: parseInt(inputs.timeOffHour.value),
+                timeOnHour: get24Hour("onTimeNum", periods.on), 
+                timeOffHour: get24Hour("offTimeNum", periods.off),
                 luxThreshold: parseInt(inputs.luxThreshold.value), timerEnabled: inputs.timerEnabled.checked,
                 globalBrightness: parseInt(inputs.globalBrightness.value), timeZoneOffset: parseInt(inputs.timeZoneOffset.value)
             };
@@ -274,28 +306,20 @@
             } catch (err) { statusMsg.textContent = `❌ Error: ${err.message}`; sendBtn.disabled = false; sendBtn.textContent = "Try Again"; }
         });
 
-        // COMMAND BUTTONS
+        // Command logic stays the same
         const logBox = document.getElementById("serialLog");
-
         document.getElementById("globalResetBtn").addEventListener("click", async () => {
-            if(!confirm("⚠️ This will wipe the enclosure's local settings back to default. Proceed?")) return;
-            logBox.value += "\n\n[CLOUD] Sending Global Reset Command..."; logBox.scrollTop = logBox.scrollHeight;
+            if(!confirm("⚠️ Reset enclosure settings?")) return;
             await update(settingsRef, { global_reset_cmd: true });
         });
-
         document.getElementById("sensorTestBtn").addEventListener("click", async () => {
-            logBox.value += "\n\n[CLOUD] Activating Sensor Test Mode on Display..."; logBox.scrollTop = logBox.scrollHeight;
             await update(settingsRef, { sensor_test_cmd: true });
         });
-
         document.getElementById("fetchLogBtn").addEventListener("click", async () => {
-            logBox.value += "\n\n[CLOUD] Requesting log dump from ESP32..."; logBox.scrollTop = logBox.scrollHeight;
             await update(settingsRef, { fetch_logs_cmd: true });
         });
-
         document.getElementById("resetBtn").addEventListener("click", async () => {
-            if(!confirm("⚠️ Are you sure you want to reboot the enclosure from the cloud?")) return;
-            logBox.value += "\n\n[CLOUD] Sending Remote Reboot Command..."; logBox.scrollTop = logBox.scrollHeight;
+            if(!confirm("⚠️ Remote reboot?")) return;
             await update(settingsRef, { reboot_cmd: true });
         });
     </script>
