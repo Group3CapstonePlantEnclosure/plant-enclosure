@@ -27,9 +27,14 @@
         
         /* Sliders */
         .slider-container { margin-bottom: 28px; }
-        .slider-labels { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 12px; color: var(--muted); }
+        .slider-labels { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 12px; color: var(--muted); align-items: center;}
         .slider-labels span.val { font-weight: bold; color: white; font-size: 16px;}
         
+        /* AM/PM Select Style */
+        .ampm-select { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 4px 8px; font-weight: bold; cursor: pointer; outline: none; margin-left: 8px; font-size: 14px; transition: 0.2s; }
+        .ampm-select:hover { background: rgba(255,255,255,0.2); }
+        .ampm-select option { background: #111; color: white; }
+
         .dual-slider { position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 10px; }
         .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; }
         .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; pointer-events: none; top: -6px; z-index: 2; margin: 0; }
@@ -117,18 +122,39 @@
                 <div style="font-size:14px; color:var(--muted)">Enable Grow Light Timer</div>
                 <label class="switch"><input type="checkbox" id="timerEnabled"><span class="slider-tog"></span></label>
             </div>
+            
             <div class="slider-container">
-                <div class="slider-labels"><span>Turn On Time</span> <span class="val" id="onVal">08:00 AM</span></div>
+                <div class="slider-labels">
+                    <span>Turn On Time</span> 
+                    <div style="display:flex; align-items:center;">
+                        <span class="val" id="onVal">8:00</span>
+                        <select id="onAmPm" class="ampm-select" onchange="updateSingles()">
+                            <option value="AM">AM</option>
+                            <option value="PM">PM</option>
+                        </select>
+                    </div>
+                </div>
                 <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
-                    <input type="range" id="timeOnHour" min="0" max="23" value="8" oninput="updateSingles()">
+                    <input type="range" id="timeOnHour" min="1" max="12" value="8" oninput="updateSingles()">
                 </div>
             </div>
+
             <div class="slider-container">
-                <div class="slider-labels"><span>Turn Off Time</span> <span class="val" id="offVal">08:00 PM</span></div>
+                <div class="slider-labels">
+                    <span>Turn Off Time</span> 
+                    <div style="display:flex; align-items:center;">
+                        <span class="val" id="offVal">8:00</span>
+                        <select id="offAmPm" class="ampm-select" onchange="updateSingles()">
+                            <option value="AM">AM</option>
+                            <option value="PM" selected>PM</option>
+                        </select>
+                    </div>
+                </div>
                 <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
-                    <input type="range" id="timeOffHour" min="0" max="23" value="20" oninput="updateSingles()">
+                    <input type="range" id="timeOffHour" min="1" max="12" value="8" oninput="updateSingles()">
                 </div>
             </div>
+
             <div class="slider-container" style="margin-bottom:0;">
                 <div class="slider-labels"><span>Lux Auto-on Threshold</span> <span class="val" id="luxVal">30000 lux</span></div>
                 <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
@@ -200,12 +226,6 @@
             }
         }
 
-        window.formatAMPM = function(hour) {
-            let h = hour % 12 || 12;
-            let ampm = hour < 12 ? 'AM' : 'PM';
-            return `${h}:00 ${ampm}`;
-        }
-
         window.updateSliders = function(type) {
             const low = document.getElementById(type + "Low"); const high = document.getElementById(type + "High");
             const track = document.getElementById(type + "Track"); const label = document.getElementById(type + "Val");
@@ -219,11 +239,20 @@
             label.textContent = `${minV}${suffix} - ${maxV}${suffix}`;
         }
 
+        window.get24Hour = function(hour12, ampm) {
+            if (hour12 === 12 && ampm === "AM") return 0;
+            if (hour12 === 12 && ampm === "PM") return 12;
+            if (ampm === "PM") return hour12 + 12;
+            return hour12;
+        }
+
         window.updateSingles = function() {
             let onH = parseInt(document.getElementById("timeOnHour").value);
             let offH = parseInt(document.getElementById("timeOffHour").value);
-            document.getElementById("onVal").textContent = formatAMPM(onH);
-            document.getElementById("offVal").textContent = formatAMPM(offH);
+            
+            document.getElementById("onVal").textContent = onH + ":00";
+            document.getElementById("offVal").textContent = offH + ":00";
+            
             document.getElementById("luxVal").textContent = document.getElementById("luxThreshold").value + " lux";
             document.getElementById("brightVal").textContent = document.getElementById("globalBrightness").value + " / 10";
             
@@ -238,8 +267,18 @@
             if (d && d.tempLow !== undefined) {
                 for (const key in d) { 
                     if (inputs[key] !== undefined) {
-                        if (key === 'timerEnabled') inputs[key].checked = d[key];
-                        else inputs[key].value = d[key];
+                        if (key === 'timerEnabled') {
+                            inputs[key].checked = d[key];
+                        } else if (key === 'timeOnHour' || key === 'timeOffHour') {
+                            let hour24 = d[key];
+                            let ampm = hour24 >= 12 ? 'PM' : 'AM';
+                            let hour12 = hour24 % 12 || 12;
+                            inputs[key].value = hour12;
+                            if (key === 'timeOnHour') document.getElementById('onAmPm').value = ampm;
+                            if (key === 'timeOffHour') document.getElementById('offAmPm').value = ampm;
+                        } else {
+                            inputs[key].value = d[key];
+                        }
                     }
                 }
             }
@@ -261,7 +300,8 @@
                 tempLow: parseFloat(inputs.tempLow.value), tempHigh: parseFloat(inputs.tempHigh.value),
                 humLow: parseFloat(inputs.humLow.value), humHigh: parseFloat(inputs.humHigh.value),
                 soilLow: parseInt(inputs.soilLow.value), soilHigh: parseInt(inputs.soilHigh.value),
-                timeOnHour: parseInt(inputs.timeOnHour.value), timeOffHour: parseInt(inputs.timeOffHour.value),
+                timeOnHour: window.get24Hour(parseInt(inputs.timeOnHour.value), document.getElementById("onAmPm").value),
+                timeOffHour: window.get24Hour(parseInt(inputs.timeOffHour.value), document.getElementById("offAmPm").value),
                 luxThreshold: parseInt(inputs.luxThreshold.value), timerEnabled: inputs.timerEnabled.checked,
                 globalBrightness: parseInt(inputs.globalBrightness.value), timeZoneOffset: parseInt(inputs.timeZoneOffset.value)
             };
