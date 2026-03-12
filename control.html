@@ -120,7 +120,7 @@
                 <div class="time-group">
                     <input type="number" id="onH" min="1" max="12" value="8" class="time-input-num">
                     <span class="time-sep">:</span>
-                    <input type="number" id="onM" min="0" max="59" value="00" class="time-input-num">
+                    <input type="number" id="onM" min="0" max="59" value="00" class="time-input-num" onblur="padInput(this)">
                     <div class="btn-row" style="flex: 1; margin-left: 5px;">
                         <button class="btn-term ampm-btn" id="onAM" onclick="setPeriod('on', 'AM')">AM</button>
                         <button class="btn-term ampm-btn" id="onPM" onclick="setPeriod('on', 'PM')">PM</button>
@@ -133,7 +133,7 @@
                 <div class="time-group">
                     <input type="number" id="offH" min="1" max="12" value="8" class="time-input-num">
                     <span class="time-sep">:</span>
-                    <input type="number" id="offM" min="0" max="59" value="00" class="time-input-num">
+                    <input type="number" id="offM" min="0" max="59" value="00" class="time-input-num" onblur="padInput(this)">
                     <div class="btn-row" style="flex: 1; margin-left: 5px;">
                         <button class="btn-term ampm-btn" id="offAM" onclick="setPeriod('off', 'AM')">AM</button>
                         <button class="btn-term ampm-btn" id="offPM" onclick="setPeriod('off', 'PM')">PM</button>
@@ -188,6 +188,13 @@
         let periods = { on: 'AM', off: 'PM' };
         const settingsRef = ref(db, 'settings');
 
+        // Padds single digits with a leading zero
+        window.padInput = function(el) {
+            if (el.value !== "") {
+                el.value = el.value.padStart(2, '0');
+            }
+        }
+
         window.setPeriod = function(type, p) {
             periods[type] = p;
             document.getElementById(type + 'AM').classList.toggle('active', p === 'AM');
@@ -206,20 +213,21 @@
             let m = parseInt(document.getElementById(mId).value) || 0;
             if (h > 12) h = 12; if (h < 1) h = 1;
             if (m > 59) m = 59; if (m < 0) m = 0;
-            
             if (period === 'PM' && h < 12) h += 12;
             if (period === 'AM' && h === 12) h = 0;
-            
             return parseFloat((h + (m / 60)).toFixed(2));
         }
 
         function parseDecimalHour(decimalTime, hId, mId, type) {
-            let h24 = Math.floor(decimalTime);
-            let m = Math.round((decimalTime - h24) * 60);
+            let totalMinutes = Math.round(decimalTime * 60);
+            let h24 = Math.floor(totalMinutes / 60);
+            let m = totalMinutes % 60;
+            
             let period = h24 >= 12 ? 'PM' : 'AM';
             let h12 = h24 % 12 || 12;
             
             document.getElementById(hId).value = h12;
+            // Pad the minute with a leading zero immediately on load
             document.getElementById(mId).value = m.toString().padStart(2, '0');
             setPeriod(type, period);
         }
@@ -230,10 +238,8 @@
             const track = document.getElementById(type + "Track");
             const label = document.getElementById(type + "Val");
             const suffix = type === 'temp' ? '°F' : '%';
-            
             let minV = parseInt(low.value); let maxV = parseInt(high.value);
             if (minV >= maxV) { low.value = maxV - 1; minV = maxV - 1; }
-            
             const range = low.max - low.min;
             const p1 = ((minV - low.min) / range) * 100;
             const p2 = ((maxV - low.min) / range) * 100;
@@ -248,7 +254,6 @@
             document.getElementById("tzVal").textContent = "UTC " + (tz >= 0 ? "+" : "") + tz;
         }
 
-        // Initial Load
         get(settingsRef).then((snapshot) => {
             const d = snapshot.val();
             if (d) {
@@ -263,7 +268,6 @@
                     document.getElementById("timerEnabled").checked = d.timerEnabled;
                     document.getElementById("globalBrightness").value = d.globalBrightness;
                     document.getElementById("timeZoneOffset").value = d.timeZoneOffset;
-                    
                     parseDecimalHour(d.timeOnHour, "onH", "onM", "on");
                     parseDecimalHour(d.timeOffHour, "offH", "offM", "off");
                 }
@@ -275,7 +279,6 @@
         document.getElementById("sendBtn").addEventListener("click", async () => {
             const btn = document.getElementById("sendBtn");
             btn.disabled = true; btn.textContent = "Syncing...";
-            
             const data = {
                 tempLow: parseFloat(document.getElementById("tempLow").value),
                 tempHigh: parseFloat(document.getElementById("tempHigh").value),
@@ -290,7 +293,6 @@
                 globalBrightness: parseInt(document.getElementById("globalBrightness").value),
                 timeZoneOffset: parseInt(document.getElementById("timeZoneOffset").value)
             };
-
             try {
                 await update(settingsRef, data);
                 document.getElementById("statusMsg").textContent = "✅ Cloud Updated!";
