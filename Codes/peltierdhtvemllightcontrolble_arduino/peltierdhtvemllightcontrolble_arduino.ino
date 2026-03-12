@@ -1,22 +1,15 @@
 #include <Wire.h>
 #include <Adafruit_VEML7700.h>
-#include <DHT.h>
-#include <SoftwareSerial.h> // Added for Uno R3
+#include "Adafruit_SHT4x.h"
 
-// Setup SoftwareSerial for ESP32 communication
-#define RX_PIN 10
-#define TX_PIN 11
-SoftwareSerial ESP_Serial(RX_PIN, TX_PIN);
-#define COMM_SERIAL ESP_Serial 
+#define COMM_SERIAL Serial1 
 
 // Hardware Pins
 #define PELTIER_IN1 4
 #define PELTIER_IN2 5
 #define LIGHT_PWM_PIN 9
-#define DHTPIN 7     // Digital pin for DHT11
-#define DHTTYPE DHT11
 
-DHT dht(DHTPIN, DHTTYPE);
+Adafruit_SHT4x sht4 = Adafruit_SHT4x();
 Adafruit_VEML7700 veml = Adafruit_VEML7700();
 
 // ------------------- AUTO LIGHT CONTROL -------------------
@@ -27,7 +20,7 @@ int level = 3;
 bool ledOn = false;
 
 int pwmForLevel(int lvl) {
-  if (lvl == 1) return 25;
+  if (lvl == 1) return 25;2
   if (lvl == 2) return 100;
   return 255;
 }
@@ -140,15 +133,15 @@ const unsigned long heaterInterval = 900000;
 bool heaterActive = false;
 unsigned long heaterStartTime = 0;
 
-bool dht_found = false; 
-bool veml_found = false;
+bool sht4_found = false, veml_found = false;
 
 unsigned long lastUpdate = 0;
 const long updateInterval = 10000;
 
 void setup() {
-  Serial.begin(115200);      // PC Serial Monitor
-  COMM_SERIAL.begin(9600);   // ESP32 Communication (SoftwareSerial is best at 9600)
+
+  Serial.begin(115200);
+  COMM_SERIAL.begin(115200);
 
   pinMode(PELTIER_IN1, OUTPUT);
   pinMode(PELTIER_IN2, OUTPUT);
@@ -156,14 +149,13 @@ void setup() {
 
   applyPwm(0);
 
-  // Initialize DHT sensor
-  dht.begin();
-  dht_found = true; 
+  if (sht4.begin()) {
+    sht4_found = true;
+    sht4.setHeater(SHT4X_NO_HEATER);
+  }
 
   if (veml.begin()) {
     veml_found = true;
-  } else {
-    Serial.println("VEML7700 not found! Check wiring.");
   }
 
   Serial.println("System Online.");
@@ -221,9 +213,16 @@ void loop() {
 
 void startCleaningCycle() {
 
-  if (!dht_found) return;
+  if (!sht4_found) return;
 
-  Serial.println("!!! DHT11 CLEANING CYCLE (Simulated - No physical heater) !!!");
+  Serial.println("!!! SHT4x CLEANING START (1s Blast) !!!");
+
+  sht4.setHeater(SHT4X_HIGH_HEATER_1S);
+
+  sensors_event_t h, t;
+  sht4.getEvent(&h, &t);
+
+  sht4.setHeater(SHT4X_NO_HEATER);
 
   heaterStartTime = millis();
   heaterActive = true;
@@ -231,7 +230,7 @@ void startCleaningCycle() {
 
   COMM_SERIAL.println("STATUS:CLEANING");
 
-  Serial.println("Simulated blast complete. Cooling down for 10 seconds...");
+  Serial.println("Blast complete. Cooling down for 10 seconds...");
 }
 
 void processESP32Command(String cmd) {
@@ -252,6 +251,7 @@ void processESP32Command(String cmd) {
   }
 
   else if (cmd.startsWith("CMD:LIGHT,")) {
+
     int pwmValue = cmd.substring(10).toInt();
     analogWrite(LIGHT_PWM_PIN, pwmValue);
   }
@@ -262,17 +262,14 @@ void sendSensorData(float lux) {
   float t = 0.0;
   float h = 0.0;
 
-  if (dht_found) {
-    // Read humidity and temperature
-    float humidity = dht.readHumidity();
-    float tempC = dht.readTemperature(); 
+  if (sht4_found) {
 
-    if (isnan(humidity) || isnan(tempC)) {
-      Serial.println("Failed to read from DHT sensor!");
-    } else {
-      t = ((tempC * 1.8) + 32.0) + tempOffset;
-      h = humidity;
-    }
+    sensors_event_t humidity, temp;
+
+    sht4.getEvent(&humidity, &temp);
+
+    t = ((temp.temperature * 1.8) + 32.0) + tempOffset;
+    h = humidity.relative_humidity;
   }
 
   String dataPacket =
