@@ -101,7 +101,12 @@ unsigned long lastMinuteTick = 0, lastSerialRecv = 0;
 
 volatile bool triggerCloudPush = false;
 volatile bool uiNeedsUpdate = false; 
+volatile bool isScanning = false;
+volatile bool isConnecting = false; // Prevents crash if scan pressed during boot connect
+
 TaskHandle_t CloudTaskHandle = NULL;
+TaskHandle_t UILoopTaskHandle = NULL; // New Task to prevent Stack Overflow!
+
 const char* firebaseURL = "https://plant-enclosure-default-rtdb.firebaseio.com/settings.json";
 
 struct WiFiCreds { const char* ssid; const char* pass; };
@@ -182,16 +187,33 @@ void update_dashboard_timer_cb(lv_timer_t * timer) {
   }
 }
 
-// This allows tapping the "Menu" tab repeatedly to go back to the root!
+// --- MENU RETURN FIX ---
 static void tab_btn_click_cb(lv_event_t * e) {
-  lv_obj_t * tab_btns = (lv_obj_t *)lv_event_get_target(e);
-  uint32_t id = lv_tabview_get_tab_active(tabview);
-  if (id == 1) { // If we clicked Menu while already on Menu
+  // Check which tab is currently active at the moment of the click
+  uint32_t active_tab = lv_tabview_get_tab_active(tabview);
+  
+  // If the "Menu" tab (index 1) is ALREADY active, and the user tapped 
+  // the top bar again, they are trying to go "Home".
+  if (active_tab == 1 && menu != NULL) { 
     lv_menu_clear_history(menu);
   }
 }
 
-static void scan_wifi_btn_cb(lv_event_t * e) { build_wifi_scanner_ui(); }
+static void scan_wifi_btn_cb(lv_event_t * e) { 
+  if(isConnecting) {
+    lv_obj_t * mbox = lv_msgbox_create(NULL);
+    lv_msgbox_add_text(mbox, "Please wait for boot connection to finish.");
+    
+    // v9 FIX: Use lv_timer_get_user_data(t) instead of t->user_data
+    lv_timer_create([](lv_timer_t * t){ 
+        lv_msgbox_close((lv_obj_t *)lv_timer_get_user_data(t)); 
+        lv_timer_del(t); 
+    }, 2000, mbox);
+    
+    return;
+  }
+  build_wifi_scanner_ui(); 
+}
 
 static void show_ip_btn_cb(lv_event_t * e) {
   String ip = (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString() : "Not Connected";
@@ -202,6 +224,7 @@ static void show_ip_btn_cb(lv_event_t * e) {
 }
 
 static void saved_net_connect_cb(lv_event_t * e) {
+  if(isConnecting) return;
   int idx = (intptr_t)lv_event_get_user_data(e);
   strcpy(selected_ssid, myNetworks[idx].ssid);
   
@@ -309,7 +332,6 @@ static void lux_slider_cb(lv_event_t * e) {
 // TIME PICKER UI 
 // ==========================================
 
-// Helper to convert 24H to 12H UI strings
 void update_timer_labels() {
   if(!lbl_time_on || !lbl_time_off) return;
   char buf[32];
@@ -345,42 +367,33 @@ static void save_time_btn_cb(lv_event_t * e) {
   
   update_timer_labels();
   triggerCloudPush = true;
-  lv_obj_add_flag(time_picker_bg, LV_OBJ_FLAG_HIDDEN); // Hide it!
+  lv_obj_add_flag(time_picker_bg, LV_OBJ_FLAG_HIDDEN); 
 }
 
-// --- TIME PICKER ROLLER CALLBACKS ---
 static void minute_roller_cb(lv_event_t * e) {
   static int last_min_idx = -1;
   lv_obj_t * roller = (lv_obj_t *)lv_event_get_target(e);
   int current_min_idx = lv_roller_get_selected(roller);
   
-  // Initialize index on first touch
   if(last_min_idx == -1) { last_min_idx = current_min_idx; return; }
   if(last_min_idx == current_min_idx) return;
 
-  // Calculate the jump distance
   int diff = current_min_idx - last_min_idx;
   
-  // diff < -30 means a large jump forward (e.g., 58 -> 02) = Forward Wrap
   if (diff < -30) { 
     int h_idx = lv_roller_get_selected(roller_h);
     int next_h_idx = (h_idx + 1) % 12;
     lv_roller_set_selected(roller_h, next_h_idx, LV_ANIM_ON);
-    
-    // If hour was 12 (index 11) and wrapped to 1 (index 0), flip AM/PM
     if(h_idx == 11) {
       int ampm = lv_roller_get_selected(roller_ampm);
       lv_roller_set_selected(roller_ampm, ampm == 0 ? 1 : 0, LV_ANIM_ON);
     }
   } 
-  // diff > 30 means a large jump backward (e.g., 02 -> 58) = Backward Wrap
   else if (diff > 30) {
     int h_idx = lv_roller_get_selected(roller_h);
     int prev_h_idx = (h_idx - 1);
     if(prev_h_idx < 0) prev_h_idx = 11;
     lv_roller_set_selected(roller_h, prev_h_idx, LV_ANIM_ON);
-    
-    // If hour was 1 (index 0) and wrapped back to 12 (index 11), flip AM/PM
     if(h_idx == 0) {
       int ampm = lv_roller_get_selected(roller_ampm);
       lv_roller_set_selected(roller_ampm, ampm == 0 ? 1 : 0, LV_ANIM_ON);
@@ -400,8 +413,6 @@ static void hour_roller_cb(lv_event_t * e) {
 
   int diff = current_hour_idx - last_hour_idx;
 
-  // Since there are only 12 indices (0-11), a jump > 6 (halfway) 
-  // indicates the roller wrapped across the 12 <-> 1 boundary.
   if (diff < -6 || diff > 6) { 
       int ampm = lv_roller_get_selected(roller_ampm);
       lv_roller_set_selected(roller_ampm, ampm == 0 ? 1 : 0, LV_ANIM_ON);
@@ -413,11 +424,9 @@ static void hour_roller_cb(lv_event_t * e) {
 void open_time_picker(bool isOnTime) {
   isEditingOnTime = isOnTime;
   
-  // Set the title text
   lv_obj_t * title = (lv_obj_t *)lv_obj_get_user_data(time_picker_bg);
   lv_label_set_text(title, isOnTime ? "SELECT ON TIME" : "SELECT OFF TIME");
 
-  // Set initial roller positions based on global state
   int h24 = isOnTime ? timeOnHour : timeOffHour;
   int m = isOnTime ? timeOnMinute : timeOffMinute;
   int h12 = h24 % 12; if(h12 == 0) h12 = 12;
@@ -426,11 +435,9 @@ void open_time_picker(bool isOnTime) {
   lv_roller_set_selected(roller_m, m, LV_ANIM_OFF);
   lv_roller_set_selected(roller_ampm, h24 >= 12 ? 1 : 0, LV_ANIM_OFF);
 
-  // Initialize the delta tracking memory for the callbacks
   lv_obj_send_event(roller_h, LV_EVENT_VALUE_CHANGED, NULL);
   lv_obj_send_event(roller_m, LV_EVENT_VALUE_CHANGED, NULL);
 
-  // Unhide the modal and bring it to the absolute front
   lv_obj_remove_flag(time_picker_bg, LV_OBJ_FLAG_HIDDEN);
   lv_obj_move_foreground(time_picker_bg);
 }
@@ -530,8 +537,7 @@ void build_wifi_scanner_ui() {
   if(wifi_list != NULL) { lv_obj_del(wifi_list); wifi_list = NULL; }
   lv_obj_add_flag(tabview, LV_OBJ_FLAG_HIDDEN);
 
-  // CRASH FIX: Suspend Cloud Task completely so it doesn't interrupt the scan!
-  if(CloudTaskHandle != NULL) vTaskSuspend(CloudTaskHandle);
+  if(CloudTaskHandle != NULL) vTaskSuspend(CloudTaskHandle); // CRASH FIX
 
   Serial.println("Scanning...");
   int n = WiFi.scanNetworks(false, true); 
@@ -568,8 +574,6 @@ void apply_menu_border(lv_obj_t * cont) {
 // ==========================================
 // PERSISTENT TIME PICKER MODAL (CRASH-PROOF)
 // ==========================================
-
-// Creates the modal ONCE at boot so we never run out of memory dynamically allocating it.
 void build_time_picker_modal() {
   time_picker_bg = lv_obj_create(lv_scr_act());
   lv_obj_set_size(time_picker_bg, 320, 240);
@@ -586,7 +590,6 @@ void build_time_picker_modal() {
   lv_obj_set_style_border_width(modal, 0, 0);
 
   lv_obj_t * title = lv_label_create(modal);
-  // We use user_data to store the title pointer so we can change it later
   lv_obj_set_user_data(time_picker_bg, title); 
   lv_label_set_text(title, "SELECT TIME");
   lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
@@ -639,11 +642,7 @@ void build_time_picker_modal() {
   lv_label_set_text(cancel_lbl, "CANCEL");
   lv_obj_set_style_text_color(cancel_lbl, theme_color, 0);
   lv_obj_set_style_text_font(cancel_lbl, &lv_font_montserrat_14, 0);
-  
-  // Notice we now just HIDE the modal instead of deleting it!
-  lv_obj_add_event_cb(cancel_btn, [](lv_event_t * e){ 
-    lv_obj_add_flag(time_picker_bg, LV_OBJ_FLAG_HIDDEN); 
-  }, LV_EVENT_CLICKED, NULL);
+  lv_obj_add_event_cb(cancel_btn, [](lv_event_t * e){ lv_obj_add_flag(time_picker_bg, LV_OBJ_FLAG_HIDDEN); }, LV_EVENT_CLICKED, NULL);
 }
 
 // ==========================================
@@ -677,7 +676,7 @@ void build_lvgl_ui() {
   lv_obj_set_style_pad_bottom(tab_btns, 5, LV_PART_ITEMS);
   lv_obj_set_style_text_font(tab_btns, &lv_font_montserrat_14, 0); 
   
-  // Double-Click Menu Return fix
+  // FIX: Use a standard CLICKED event so the resistive screen registers it easily
   lv_obj_add_event_cb(tab_btns, tab_btn_click_cb, LV_EVENT_CLICKED, NULL);
   
   lv_obj_t * tab1 = lv_tabview_add_tab(tabview, "Dashboard");
@@ -850,6 +849,8 @@ void build_lvgl_ui() {
   lv_menu_set_load_page_event(menu, cont, sub_network);
 
   lv_menu_set_page(menu, main_page);
+  
+  // Build persistent modals
   build_time_picker_modal();
 }
 
@@ -1005,8 +1006,17 @@ void evaluateControlLogic() {
   Serial2.printf("CMD:LIGHT,%d\n", turnLightOn ? map(globalBrightness, 1, 10, 25, 255) : 0);
 }
 
+// ==========================================
+// CORE 0: CLOUD TASK (UI SAFE)
+// ==========================================
 void cloudTask(void * parameter) {
   for (;;) {
+    // CRASH FIX 1: If Core 1 is actively scanning or connecting, do not touch WiFi!
+    if (isScanning || isConnecting) {
+      vTaskDelay(200 / portTICK_PERIOD_MS);
+      continue;
+    }
+
     if (WiFi.status() == WL_CONNECTED) {
       if (triggerCloudPush) {
         HTTPClient http; http.begin(firebaseURL); http.addHeader("Content-Type", "application/json");
@@ -1019,7 +1029,6 @@ void cloudTask(void * parameter) {
         doc["timeOffHour"] = timeOffHour; doc["timeOffMin"] = timeOffMinute;
         doc["timerEnabled"] = timerEnabled; doc["luxThreshold"] = luxThreshold; 
         doc["darkMode"] = isDarkMode;
-        doc["timerEnabled"] = timerEnabled; // Matching control.html key
         
         String output; serializeJson(doc, output);
         http.sendRequest("PATCH", output); http.end();
@@ -1040,6 +1049,17 @@ void cloudTask(void * parameter) {
       }
     }
     vTaskDelay(100 / portTICK_PERIOD_MS);
+  }
+}
+
+// ==========================================
+// CORE 1: DEDICATED UI TASK (STACK OVERFLOW FIX)
+// ==========================================
+void uiLoopTask(void * parameter) {
+  for(;;) {
+    lv_timer_handler();
+    if(uiNeedsUpdate) update_ui_from_data();
+    vTaskDelay(5 / portTICK_PERIOD_MS); // Yield to watchdog
   }
 }
 
@@ -1071,6 +1091,11 @@ void setup() {
 
   build_lvgl_ui();
 
+  // CRASH FIX 2: Move UI handling to a dedicated task with 16KB of stack space. 
+  // Standard Arduino loop() only has 8KB, which is not enough for complex LVGL menus.
+  xTaskCreatePinnedToCore(uiLoopTask, "UITask", 16384, NULL, 2, &UILoopTaskHandle, 1);
+
+  isConnecting = true; // Tell Cloud Task to hold on while we boot
   WiFi.mode(WIFI_STA);
   bool connected = false;
   int numNetworks = sizeof(myNetworks) / sizeof(myNetworks[0]);
@@ -1102,20 +1127,16 @@ void setup() {
     rtc_bssid_valid = 12345; rtc_channel = WiFi.channel(); memcpy(rtc_bssid, WiFi.BSSID(), 6);
   }
 
-  // Create task with pointer assignment so we can suspend it later!
+  isConnecting = false; // Boot connect is done. Safe to start background cloud polling.
   xTaskCreatePinnedToCore(cloudTask, "CloudTask", 8192, NULL, 1, &CloudTaskHandle, 0);
 }
 
 void loop() {
-  lv_timer_handler();
   checkSerialSensors();
-  
-  if(uiNeedsUpdate) update_ui_from_data();
-  
   static unsigned long lastLogic = 0;
   if (millis() - lastLogic > 5000) {
     lastLogic = millis();
     evaluateControlLogic();
   }
-  delay(5);
+  delay(10); // Standard loop can sleep, heavy lifting is in FreeRTOS tasks now
 }
