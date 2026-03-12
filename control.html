@@ -8,10 +8,13 @@
         :root { --bg: #0b0f0c; --text: rgba(255,255,255,0.92); --muted: rgba(255,255,255,0.6); --radius: 20px; 
                 --c-temp: #ff6b6b; --c-water: #4fc3f7; --c-light: #ffeb3b; --c-sys: #ba68c8; --c-term: #00ff41; }
         body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; padding: 30px 20px 80px 20px; display: flex; flex-direction: column; align-items: center; }
+        
         .header { max-width: 600px; width: 100%; margin: 0 auto 30px auto; text-align: center; position: relative; }
         .back-btn { position: absolute; left: 0; top: 50%; transform: translateY(-50%); color: var(--muted); text-decoration: none; font-size: 14px; }
         h2 { margin: 0; font-weight: 300; font-size: 28px; }
+
         .form-container { width: 100%; max-width: 600px; display: flex; flex-direction: column; gap: 20px; }
+        
         .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius); padding: 24px; backdrop-filter: blur(20px); position: relative; overflow: hidden; }
         .card::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; }
         .card.card-temp::before { background: var(--c-temp); box-shadow: 0 0 15px var(--c-temp); }
@@ -19,18 +22,27 @@
         .card.card-light::before { background: var(--c-light); box-shadow: 0 0 15px var(--c-light); }
         .card.card-sys::before { background: var(--c-sys); box-shadow: 0 0 15px var(--c-sys); }
         .card.card-term::before { background: var(--c-term); box-shadow: 0 0 15px var(--c-term); }
+
         .group-title { font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 24px; font-weight: 700; color: #fff; opacity: 0.8;}
+        
         .slider-container { margin-bottom: 28px; }
         .slider-labels { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 12px; color: var(--muted); }
         .slider-labels span.val { font-weight: bold; color: white; font-size: 16px;}
+        
         .dual-slider { position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 10px; }
         .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; }
         .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; pointer-events: none; top: -6px; z-index: 2; margin: 0; }
         .dual-slider input[type="range"]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 20px; height: 20px; background: #111; border: 2px solid white; border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
+        
         .card-temp .slider-track { background: var(--c-temp); }
+        .card-temp .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-temp); }
         .card-water .slider-track { background: var(--c-water); }
+        .card-water .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-water); }
         .card-light .slider-track { background: var(--c-light); }
+        .card-light .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-light); }
         .card-sys .slider-track { background: var(--c-sys); }
+        .card-sys .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-sys); }
+
         .toggle-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
         .switch input { opacity: 0; width: 0; height: 0; }
@@ -38,16 +50,20 @@
         .slider-tog:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .3s; border-radius: 50%; }
         input:checked + .slider-tog { background-color: var(--c-light); }
         input:checked + .slider-tog:before { transform: translateX(22px); background-color: #000; }
+
         .time-group { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
         .time-input-num { width: 55px; text-align: center; font-size: 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 10px; border-radius: 10px; outline: none; }
         .time-sep { font-weight: bold; font-size: 18px; color: var(--muted); }
         .ampm-btn.active { background: var(--c-light) !important; color: #000 !important; border-color: var(--c-light) !important; }
+
         .btn-push { position: sticky; bottom: 20px; width: 100%; max-width: 600px; background: rgba(255,255,255,0.95); color: #000; border: none; padding: 18px; border-radius: 16px; font-weight: 700; font-size: 16px; cursor: pointer; box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 10; transition: 0.2s;}
+        .btn-push:active { transform: scale(0.98); }
         #statusMsg { text-align: center; font-size: 13px; margin-top: 15px; color: var(--muted); }
-        .advanced-toggle { color: var(--muted); font-size: 10pt; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; margin-top: 20px; margin-bottom: 20px; text-align: center; width: 100%; }
+
+        .advanced-toggle { color: var(--muted); font-size: 10pt; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; margin-top: 20px; margin-bottom: 20px; transition: 0.2s; text-align: center; width: 100%; max-width: 600px;}
         textarea#serialLog { width: 100%; height: 180px; background: #050505; color: var(--c-term); border: 1px solid rgba(0,255,65,0.3); border-radius: 12px; padding: 12px; font-family: monospace; font-size: 12px; resize: none; margin-bottom: 16px; box-sizing: border-box; }
         .btn-row { display: flex; gap: 10px; }
-        .btn-term { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: white; cursor: pointer; font-weight: bold; }
+        .btn-term { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: white; cursor: pointer; font-weight: bold; transition: 0.2s; }
         .btn-danger { background: rgba(255,69,58,0.15); border-color: rgba(255,69,58,0.4); color: #ff453a; }
     </style>
 </head>
@@ -65,8 +81,28 @@
                 <div class="slider-labels"><span>Temperature</span> <span class="val" id="tempVal">65°F - 85°F</span></div>
                 <div class="dual-slider">
                     <div class="slider-track" id="tempTrack"></div>
-                    <input type="range" id="tempLow" min="40" max="100" oninput="updateSliders('temp')">
-                    <input type="range" id="tempHigh" min="40" max="100" oninput="updateSliders('temp')">
+                    <input type="range" id="tempLow" min="40" max="100" step="1" oninput="updateSliders('temp')">
+                    <input type="range" id="tempHigh" min="40" max="100" step="1" oninput="updateSliders('temp')">
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-water">
+            <div class="group-title">💧 Moisture & Humidity</div>
+            <div class="slider-container">
+                <div class="slider-labels"><span>Humidity</span> <span class="val" id="humVal">40% - 60%</span></div>
+                <div class="dual-slider">
+                    <div class="slider-track" id="humTrack"></div>
+                    <input type="range" id="humLow" min="0" max="100" step="1" oninput="updateSliders('hum')">
+                    <input type="range" id="humHigh" min="0" max="100" step="1" oninput="updateSliders('hum')">
+                </div>
+            </div>
+            <div class="slider-container" style="margin-bottom:0;">
+                <div class="slider-labels"><span>Soil Moisture</span> <span class="val" id="soilVal">20% - 50%</span></div>
+                <div class="dual-slider">
+                    <div class="slider-track" id="soilTrack"></div>
+                    <input type="range" id="soilLow" min="0" max="100" step="1" oninput="updateSliders('soil')">
+                    <input type="range" id="soilHigh" min="0" max="100" step="1" oninput="updateSliders('soil')">
                 </div>
             </div>
         </div>
@@ -103,18 +139,49 @@
                     </div>
                 </div>
             </div>
+
+            <div class="slider-container" style="margin-bottom:0;">
+                <div class="slider-labels"><span>Lux Threshold</span> <span class="val" id="luxVal">30000 lux</span></div>
+                <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
+                    <input type="range" id="luxThreshold" min="0" max="100000" step="1000" oninput="updateSingles()">
+                </div>
+            </div>
         </div>
     </div>
 
     <div class="advanced-toggle" id="advLabel" onclick="toggleAdvanced()">▼ Advanced Settings</div>
 
     <div class="form-container" id="advancedSettings" style="display: none; margin-bottom: 20px;">
+        <div class="card card-sys">
+            <div class="group-title">⚙️ System Configuration</div>
+            <div class="slider-container">
+                <div class="slider-labels"><span>Brightness</span> <span class="val" id="brightVal">10 / 10</span></div>
+                <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
+                    <input type="range" id="globalBrightness" min="1" max="10" oninput="updateSingles()">
+                </div>
+            </div>
+            <div class="slider-container" style="margin-bottom:0;">
+                <div class="slider-labels"><span>Time Zone</span> <span class="val" id="tzVal">UTC -5</span></div>
+                <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
+                    <input type="range" id="timeZoneOffset" min="-12" max="14" oninput="updateSingles()">
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-sys">
+            <div class="group-title">🛠️ System Actions</div>
+            <div class="btn-row">
+                <button class="btn-term btn-danger" id="globalResetBtn">Factory Reset</button>
+                <button class="btn-term" id="sensorTestBtn" style="color: var(--c-water); border-color: rgba(79, 195, 247, 0.4);">Run Sensor Test</button>
+            </div>
+        </div>
+
         <div class="card card-term">
             <div class="group-title">☁️ Cloud Serial Monitor</div>
-            <textarea id="serialLog" readonly>Waiting...</textarea>
+            <textarea id="serialLog" readonly>Waiting for connection...</textarea>
             <div class="btn-row">
-                <button class="btn-term" id="sensorTestBtn">Run Sensor Test</button>
-                <button class="btn-term" id="fetchLogBtn">Fetch Logs</button>
+                <button class="btn-term" id="fetchLogBtn">🔄 Request Logs</button>
+                <button class="btn-term btn-danger" id="resetBtn">⚠️ Remote Reboot</button>
             </div>
         </div>
     </div>
@@ -128,90 +195,126 @@
         let periods = { on: 'AM', off: 'PM' };
         const settingsRef = ref(db, 'settings');
 
-        window.padInput = (el) => { if (el.value !== "") el.value = el.value.padStart(2, '0'); };
+        window.padInput = function(el) {
+            if (el.value !== "") el.value = el.value.padStart(2, '0');
+        }
 
-        window.setPeriod = (type, p) => {
+        window.setPeriod = function(type, p) {
             periods[type] = p;
             document.getElementById(type + 'AM').classList.toggle('active', p === 'AM');
             document.getElementById(type + 'PM').classList.toggle('active', p === 'PM');
-        };
+        }
 
-        window.toggleAdvanced = () => {
+        window.toggleAdvanced = function() {
             const adv = document.getElementById("advancedSettings");
+            const label = document.getElementById("advLabel");
             adv.style.display = adv.style.display === "none" ? "flex" : "none";
-        };
+            label.textContent = adv.style.display === "none" ? "▼ Advanced Settings" : "▲ Close Advanced Settings";
+        }
 
-        // NEW LOGIC: Convert 12h UI to 24h Integer Hours + Minutes separately
-        function get24H(hId, period) {
+        function calculateDecimalHour(hId, mId, period) {
             let h = parseInt(document.getElementById(hId).value) || 12;
+            let m = parseInt(document.getElementById(mId).value) || 0;
+            if (h > 12) h = 12; if (h < 1) h = 1;
+            if (m > 59) m = 59; if (m < 0) m = 0;
             if (period === 'PM' && h < 12) h += 12;
             if (period === 'AM' && h === 12) h = 0;
-            return h;
+            return parseFloat((h + (m / 60)).toFixed(2));
+        }
+
+        function parseDecimalHour(decimalTime, hId, mId, type) {
+            let totalMinutes = Math.round(decimalTime * 60);
+            let h24 = Math.floor(totalMinutes / 60);
+            let m = totalMinutes % 60;
+            let h12 = h24 % 12 || 12;
+            document.getElementById(hId).value = h12;
+            document.getElementById(mId).value = m.toString().padStart(2, '0');
+            setPeriod(type, h24 >= 12 ? 'PM' : 'AM');
         }
 
         window.updateSliders = function(type) {
-            const low = document.getElementById(type + "Low"), high = document.getElementById(type + "High");
-            const track = document.getElementById(type + "Track"), label = document.getElementById(type + "Val");
-            if (parseInt(low.value) >= parseInt(high.value)) low.value = parseInt(high.value) - 1;
-            const p1 = ((low.value - low.min) / (low.max - low.min)) * 100;
-            const p2 = ((high.value - low.min) / (low.max - low.min)) * 100;
+            const low = document.getElementById(type + "Low");
+            const high = document.getElementById(type + "High");
+            const track = document.getElementById(type + "Track");
+            const label = document.getElementById(type + "Val");
+            const suffix = type === 'temp' ? '°F' : '%';
+            let minV = parseInt(low.value), maxV = parseInt(high.value);
+            if (minV >= maxV) { low.value = maxV - 1; minV = maxV - 1; }
+            const range = low.max - low.min;
+            const p1 = ((minV - low.min) / range) * 100, p2 = ((maxV - low.min) / range) * 100;
             track.style.left = p1 + "%"; track.style.width = (p2 - p1) + "%";
-            label.textContent = `${low.value}°F - ${high.value}°F`;
+            label.textContent = `${minV}${suffix} - ${maxV}${suffix}`;
+        }
+
+        window.updateSingles = function() {
+            document.getElementById("luxVal").textContent = document.getElementById("luxThreshold").value + " lux";
+            document.getElementById("brightVal").textContent = document.getElementById("globalBrightness").value + " / 10";
+            let tz = parseInt(document.getElementById("timeZoneOffset").value);
+            document.getElementById("tzVal").textContent = "UTC " + (tz >= 0 ? "+" : "") + tz;
         }
 
         get(settingsRef).then((snapshot) => {
             const d = snapshot.val();
-            if (d) {
-                // Load Time On
-                let onH24 = d.timeOnHour || 8;
-                let onM = d.timeOnMin || 0;
-                document.getElementById("onH").value = onH24 % 12 || 12;
-                document.getElementById("onM").value = onM.toString().padStart(2, '0');
-                setPeriod('on', onH24 >= 12 ? 'PM' : 'AM');
-
-                // Load Time Off
-                let offH24 = d.timeOffHour || 20;
-                let offM = d.timeOffMin || 0;
-                document.getElementById("offH").value = offH24 % 12 || 12;
-                document.getElementById("offM").value = offM.toString().padStart(2, '0');
-                setPeriod('off', offH24 >= 12 ? 'PM' : 'AM');
-                
-                document.getElementById("tempLow").value = d.tempLow || 70;
-                document.getElementById("tempHigh").value = d.tempHigh || 80;
+            if (d && d.tempLow !== undefined) {
+                document.getElementById("tempLow").value = d.tempLow;
+                document.getElementById("tempHigh").value = d.tempHigh;
+                document.getElementById("humLow").value = d.humLow;
+                document.getElementById("humHigh").value = d.humHigh;
+                document.getElementById("soilLow").value = d.soilLow;
+                document.getElementById("soilHigh").value = d.soilHigh;
+                document.getElementById("luxThreshold").value = d.luxThreshold;
                 document.getElementById("timerEnabled").checked = d.timerEnabled;
-                updateSliders('temp');
+                document.getElementById("globalBrightness").value = d.globalBrightness;
+                document.getElementById("timeZoneOffset").value = d.timeZoneOffset;
+                parseDecimalHour(d.timeOnHour, "onH", "onM", "on");
+                parseDecimalHour(d.timeOffHour, "offH", "offM", "off");
             }
+            ['temp', 'hum', 'soil'].forEach(updateSliders);
+            updateSingles();
         });
 
-        document.getElementById("sendBtn").onclick = async () => {
+        document.getElementById("sendBtn").addEventListener("click", async () => {
             const btn = document.getElementById("sendBtn");
             btn.disabled = true; btn.textContent = "Syncing...";
-            
             const data = {
-                tempLow: parseInt(document.getElementById("tempLow").value),
-                tempHigh: parseInt(document.getElementById("tempHigh").value),
+                tempLow: parseFloat(document.getElementById("tempLow").value),
+                tempHigh: parseFloat(document.getElementById("tempHigh").value),
+                humLow: parseFloat(document.getElementById("humLow").value),
+                humHigh: parseFloat(document.getElementById("humHigh").value),
+                soilLow: parseInt(document.getElementById("soilLow").value),
+                soilHigh: parseInt(document.getElementById("soilHigh").value),
+                timeOnHour: calculateDecimalHour("onH", "onM", periods.on),
+                timeOffHour: calculateDecimalHour("offH", "offM", periods.off),
+                luxThreshold: parseInt(document.getElementById("luxThreshold").value),
                 timerEnabled: document.getElementById("timerEnabled").checked,
-                // SAVING AS SEPARATE INTEGERS FOR THE OTHER MENU
-                timeOnHour: get24H("onH", periods.on),
-                timeOnMin: parseInt(document.getElementById("onM").value) || 0,
-                timeOffHour: get24H("offH", periods.off),
-                timeOffMin: parseInt(document.getElementById("offM").value) || 0
+                globalBrightness: parseInt(document.getElementById("globalBrightness").value),
+                timeZoneOffset: parseInt(document.getElementById("timeZoneOffset").value)
             };
-
-            await update(settingsRef, data);
-            document.getElementById("statusMsg").textContent = "✅ Cloud Updated!";
-            btn.textContent = "Success";
-            setTimeout(() => { btn.disabled = false; btn.textContent = "Push to Enclosure Cloud ☁️"; }, 2000);
-        };
+            try {
+                await update(settingsRef, data);
+                document.getElementById("statusMsg").textContent = "✅ Cloud Updated!";
+                btn.textContent = "Success";
+                setTimeout(() => { btn.disabled = false; btn.textContent = "Push to Enclosure Cloud ☁️"; }, 2000);
+            } catch (e) { document.getElementById("statusMsg").textContent = "❌ Error: " + e.message; btn.disabled = false; }
+        });
 
         onValue(settingsRef, (s) => {
-            if(s.val()?.system_logs) {
-                document.getElementById("serialLog").value = s.val().system_logs;
+            const d = s.val();
+            if(d && d.system_logs) {
+                const lb = document.getElementById("serialLog");
+                lb.value = d.system_logs; lb.scrollTop = lb.scrollHeight;
             }
         });
 
-        document.getElementById("sensorTestBtn").onclick = () => update(settingsRef, { sensor_test_cmd: true, fetch_logs_cmd: true });
+        document.getElementById("sensorTestBtn").addEventListener("click", async () => {
+            if (document.getElementById("advancedSettings").style.display === "none") toggleAdvanced();
+            document.getElementById("serialLog").value += "\n\n[CLOUD] Running Test & Fetching Logs...";
+            await update(settingsRef, { sensor_test_cmd: true, fetch_logs_cmd: true });
+        });
+
         document.getElementById("fetchLogBtn").onclick = () => update(settingsRef, { fetch_logs_cmd: true });
+        document.getElementById("resetBtn").onclick = () => confirm("Reboot?") && update(settingsRef, { reboot_cmd: true });
+        document.getElementById("globalResetBtn").onclick = () => confirm("Factory Reset?") && update(settingsRef, { global_reset_cmd: true });
     </script>
 </body>
 </html>
