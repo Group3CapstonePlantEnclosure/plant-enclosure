@@ -35,13 +35,9 @@
         .dual-slider input[type="range"]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 20px; height: 20px; background: #111; border: 2px solid white; border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
         
         .card-temp .slider-track { background: var(--c-temp); }
-        .card-temp .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-temp); }
         .card-water .slider-track { background: var(--c-water); }
-        .card-water .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-water); }
         .card-light .slider-track { background: var(--c-light); }
-        .card-light .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-light); }
         .card-sys .slider-track { background: var(--c-sys); }
-        .card-sys .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-sys); }
 
         .toggle-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
@@ -156,7 +152,7 @@
             <div class="group-title">⚙️ System Configuration</div>
             <div class="slider-container">
                 <div class="slider-labels"><span>Brightness</span> <span class="val" id="brightVal">10 / 10</span></div>
-                <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
+                <div class="dual-slider"><div class="slider-track" id="brightTrack" style="width:100%"></div>
                     <input type="range" id="globalBrightness" min="1" max="10" oninput="updateSingles()">
                 </div>
             </div>
@@ -212,24 +208,12 @@
             label.textContent = adv.style.display === "none" ? "▼ Advanced Settings" : "▲ Close Advanced Settings";
         }
 
-        function calculateDecimalHour(hId, mId, period) {
+        // Logic for converting 12h UI to 24h Integer
+        function get24H(hId, period) {
             let h = parseInt(document.getElementById(hId).value) || 12;
-            let m = parseInt(document.getElementById(mId).value) || 0;
-            if (h > 12) h = 12; if (h < 1) h = 1;
-            if (m > 59) m = 59; if (m < 0) m = 0;
             if (period === 'PM' && h < 12) h += 12;
             if (period === 'AM' && h === 12) h = 0;
-            return parseFloat((h + (m / 60)).toFixed(2));
-        }
-
-        function parseDecimalHour(decimalTime, hId, mId, type) {
-            let totalMinutes = Math.round(decimalTime * 60);
-            let h24 = Math.floor(totalMinutes / 60);
-            let m = totalMinutes % 60;
-            let h12 = h24 % 12 || 12;
-            document.getElementById(hId).value = h12;
-            document.getElementById(mId).value = m.toString().padStart(2, '0');
-            setPeriod(type, h24 >= 12 ? 'PM' : 'AM');
+            return h;
         }
 
         window.updateSliders = function(type) {
@@ -255,19 +239,30 @@
 
         get(settingsRef).then((snapshot) => {
             const d = snapshot.val();
-            if (d && d.tempLow !== undefined) {
-                document.getElementById("tempLow").value = d.tempLow;
-                document.getElementById("tempHigh").value = d.tempHigh;
-                document.getElementById("humLow").value = d.humLow;
-                document.getElementById("humHigh").value = d.humHigh;
-                document.getElementById("soilLow").value = d.soilLow;
-                document.getElementById("soilHigh").value = d.soilHigh;
-                document.getElementById("luxThreshold").value = d.luxThreshold;
+            if (d) {
+                document.getElementById("tempLow").value = d.tempLow || 40;
+                document.getElementById("tempHigh").value = d.tempHigh || 100;
+                document.getElementById("humLow").value = d.humLow || 0;
+                document.getElementById("humHigh").value = d.humHigh || 100;
+                document.getElementById("soilLow").value = d.soilLow || 0;
+                document.getElementById("soilHigh").value = d.soilHigh || 100;
+                document.getElementById("luxThreshold").value = d.luxThreshold || 30000;
                 document.getElementById("timerEnabled").checked = d.timerEnabled;
-                document.getElementById("globalBrightness").value = d.globalBrightness;
-                document.getElementById("timeZoneOffset").value = d.timeZoneOffset;
-                parseDecimalHour(d.timeOnHour, "onH", "onM", "on");
-                parseDecimalHour(d.timeOffHour, "offH", "offM", "off");
+                document.getElementById("globalBrightness").value = d.globalBrightness || 10;
+                document.getElementById("timeZoneOffset").value = d.timeZoneOffset || -5;
+                
+                // Loading separate Hour and Minute integers
+                let onH24 = d.timeOnHour !== undefined ? d.timeOnHour : 8;
+                let onM = d.timeOnMin !== undefined ? d.timeOnMin : 0;
+                document.getElementById("onH").value = onH24 % 12 || 12;
+                document.getElementById("onM").value = onM.toString().padStart(2, '0');
+                setPeriod('on', onH24 >= 12 ? 'PM' : 'AM');
+
+                let offH24 = d.timeOffHour !== undefined ? d.timeOffHour : 20;
+                let offM = d.timeOffMin !== undefined ? d.timeOffMin : 0;
+                document.getElementById("offH").value = offH24 % 12 || 12;
+                document.getElementById("offM").value = offM.toString().padStart(2, '0');
+                setPeriod('off', offH24 >= 12 ? 'PM' : 'AM');
             }
             ['temp', 'hum', 'soil'].forEach(updateSliders);
             updateSingles();
@@ -283,8 +278,11 @@
                 humHigh: parseFloat(document.getElementById("humHigh").value),
                 soilLow: parseInt(document.getElementById("soilLow").value),
                 soilHigh: parseInt(document.getElementById("soilHigh").value),
-                timeOnHour: calculateDecimalHour("onH", "onM", periods.on),
-                timeOffHour: calculateDecimalHour("offH", "offM", periods.off),
+                // Saving separate Hour/Minute integers for clean formatting on other menus
+                timeOnHour: get24H("onH", periods.on),
+                timeOnMin: parseInt(document.getElementById("onM").value) || 0,
+                timeOffHour: get24H("offH", periods.off),
+                timeOffMin: parseInt(document.getElementById("offM").value) || 0,
                 luxThreshold: parseInt(document.getElementById("luxThreshold").value),
                 timerEnabled: document.getElementById("timerEnabled").checked,
                 globalBrightness: parseInt(document.getElementById("globalBrightness").value),
