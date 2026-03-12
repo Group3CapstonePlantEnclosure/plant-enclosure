@@ -35,9 +35,13 @@
         .dual-slider input[type="range"]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 20px; height: 20px; background: #111; border: 2px solid white; border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
         
         .card-temp .slider-track { background: var(--c-temp); }
+        .card-temp .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-temp); }
         .card-water .slider-track { background: var(--c-water); }
+        .card-water .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-water); }
         .card-light .slider-track { background: var(--c-light); }
+        .card-light .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-light); }
         .card-sys .slider-track { background: var(--c-sys); }
+        .card-sys .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-sys); }
 
         .toggle-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
@@ -48,6 +52,11 @@
         input:checked + .slider-tog:before { transform: translateX(22px); background-color: #000; }
 
         .time-group { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+        
+        /* New Time Label Styles */
+        .input-wrapper { position: relative; display: flex; flex-direction: column; align-items: center; }
+        .input-label { font-size: 10px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; letter-spacing: 0.5px; }
+        
         .time-input-num { width: 55px; text-align: center; font-size: 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 10px; border-radius: 10px; outline: none; }
         .time-sep { font-weight: bold; font-size: 18px; color: var(--muted); }
         .ampm-btn.active { background: var(--c-light) !important; color: #000 !important; border-color: var(--c-light) !important; }
@@ -113,10 +122,16 @@
             <div style="margin-bottom: 24px;">
                 <div class="slider-labels"><span>Turn On Time</span></div>
                 <div class="time-group">
-                    <input type="number" id="onH" min="1" max="12" value="8" class="time-input-num">
-                    <span class="time-sep">:</span>
-                    <input type="number" id="onM" min="0" max="59" value="00" class="time-input-num" onblur="padInput(this)">
-                    <div class="btn-row" style="flex: 1; margin-left: 5px;">
+                    <div class="input-wrapper">
+                        <span class="input-label">Hours</span>
+                        <input type="number" id="onH" min="1" max="12" value="8" class="time-input-num">
+                    </div>
+                    <span class="time-sep" style="margin-top: 20px;">:</span>
+                    <div class="input-wrapper">
+                        <span class="input-label">Minutes</span>
+                        <input type="number" id="onM" min="0" max="59" value="00" class="time-input-num" onblur="padInput(this)">
+                    </div>
+                    <div class="btn-row" style="flex: 1; margin-left: 5px; margin-top: 20px;">
                         <button class="btn-term ampm-btn" id="onAM" onclick="setPeriod('on', 'AM')">AM</button>
                         <button class="btn-term ampm-btn" id="onPM" onclick="setPeriod('on', 'PM')">PM</button>
                     </div>
@@ -126,10 +141,16 @@
             <div style="margin-bottom: 24px;">
                 <div class="slider-labels"><span>Turn Off Time</span></div>
                 <div class="time-group">
-                    <input type="number" id="offH" min="1" max="12" value="8" class="time-input-num">
-                    <span class="time-sep">:</span>
-                    <input type="number" id="offM" min="0" max="59" value="00" class="time-input-num" onblur="padInput(this)">
-                    <div class="btn-row" style="flex: 1; margin-left: 5px;">
+                    <div class="input-wrapper">
+                        <span class="input-label">Hours</span>
+                        <input type="number" id="offH" min="1" max="12" value="8" class="time-input-num">
+                    </div>
+                    <span class="time-sep" style="margin-top: 20px;">:</span>
+                    <div class="input-wrapper">
+                        <span class="input-label">Minutes</span>
+                        <input type="number" id="offM" min="0" max="59" value="00" class="time-input-num" onblur="padInput(this)">
+                    </div>
+                    <div class="btn-row" style="flex: 1; margin-left: 5px; margin-top: 20px;">
                         <button class="btn-term ampm-btn" id="offAM" onclick="setPeriod('off', 'AM')">AM</button>
                         <button class="btn-term ampm-btn" id="offPM" onclick="setPeriod('off', 'PM')">PM</button>
                     </div>
