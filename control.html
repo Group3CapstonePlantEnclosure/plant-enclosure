@@ -327,11 +327,23 @@
 
         document.getElementById("sensorTestBtn").addEventListener("click", async () => {
             if (document.getElementById("advancedSettings").style.display === "none") toggleAdvanced();
-            document.getElementById("serialLog").value += "\n\n[CLOUD] Running Test & Fetching Logs...";
+            const lb = document.getElementById("serialLog");
+            lb.value += "\n\n[CLOUD] Running Sensor Test & Fetching Logs...";
+            lb.scrollTop = lb.scrollHeight;
+            
+            // Fires both the sensor check and the log fetch
             await update(settingsRef, { sensor_test_cmd: true, fetch_logs_cmd: true });
         });
 
-        document.getElementById("fetchLogBtn").onclick = () => update(settingsRef, { fetch_logs_cmd: true });
+        document.getElementById("fetchLogBtn").addEventListener("click", async () => {
+            const lb = document.getElementById("serialLog");
+            lb.value += "\n\n[CLOUD] Requesting Logs...";
+            lb.scrollTop = lb.scrollHeight;
+            
+            // Only fires the log fetch
+            await update(settingsRef, { fetch_logs_cmd: true });
+        });
+
         document.getElementById("resetBtn").onclick = () => confirm("Reboot?") && update(settingsRef, { reboot_cmd: true });
         document.getElementById("globalResetBtn").onclick = () => confirm("Factory Reset?") && update(settingsRef, { global_reset_cmd: true });
     </script>
