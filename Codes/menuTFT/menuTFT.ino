@@ -1,4 +1,3 @@
-//Library Setup
 #include <Arduino.h>
 #include <SPI.h>
 #include <Wire.h>
@@ -6,6 +5,13 @@
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <time.h>
+
+// --- FAST BOOT RTC VARIABLES ---
+// These variables survive soft reboots and deep sleep to skip WiFi channel scanning!
+RTC_DATA_ATTR int rtc_bssid_valid = 0;
+RTC_DATA_ATTR int rtc_ssid_index = -1;
+RTC_DATA_ATTR uint8_t rtc_bssid[6];
+RTC_DATA_ATTR uint8_t rtc_channel;
 
 // --- DISPLAY & TOUCH LIBRARIES ---
 #include <lvgl.h>
@@ -84,7 +90,9 @@ String webLogBuffer = "Device Booted. System initialized.\n";
 unsigned long lastMinuteTick = 0, lastSerialRecv = 0;
 
 volatile bool triggerCloudPush = false;
-volatile bool uiNeedsUpdate = false; // Tells Loop() that Web made a change
+volatile bool uiNeedsUpdate = false; 
+volatile bool isScanning = false; // CRASH FIX: Stops Core 0 from using WiFi while scanning
+
 TaskHandle_t CloudTaskHandle;
 const char* firebaseURL = "https://plant-enclosure-default-rtdb.firebaseio.com/settings.json";
 
@@ -170,7 +178,7 @@ static void dark_mode_switch_cb(lv_event_t * e) {
   
   lv_theme_t * theme = lv_theme_default_init(disp, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_CYAN), isDarkMode, LV_FONT_DEFAULT);
   lv_display_set_theme(disp, theme);
-  triggerCloudPush = true; // Sync to DB!
+  triggerCloudPush = true;
 }
 
 static void unit_switch_cb(lv_event_t * e) {
@@ -271,14 +279,33 @@ static void kb_event_cb(lv_event_t * e) {
     const char * password = lv_textarea_get_text(pwd_ta);
     if(strlen(password) == 0) { lv_label_set_text(conn_status_label, "Error: Password cannot be empty!"); return; }
     lv_label_set_text(conn_status_label, "Connecting... Please wait.");
-    WiFi.disconnect(); WiFi.begin(selected_ssid, password);
-    int retry = 0; while (WiFi.status() != WL_CONNECTED && retry < 10) { delay(500); retry++; }
+    
+    // Pause background cloud task to prevent crashes during connection
+    isScanning = true; 
+    WiFi.disconnect(); 
+    WiFi.begin(selected_ssid, password);
+    
+    int retry = 0; while (WiFi.status() != WL_CONNECTED && retry < 15) { delay(500); retry++; }
+    
     if(WiFi.status() == WL_CONNECTED) {
       lv_label_set_text(conn_status_label, "Connected Successfully!");
       sysLog("WiFi Connected to " + String(selected_ssid));
+      
+      // SAVE TO RTC FOR FAST BOOT NEXT TIME
+      rtc_bssid_valid = 12345;
+      rtc_channel = WiFi.channel();
+      memcpy(rtc_bssid, WiFi.BSSID(), 6);
+      
+      // Find and save the index of the connected network
+      rtc_ssid_index = -1;
+      for(int i=0; i < sizeof(myNetworks)/sizeof(myNetworks[0]); i++) {
+        if(String(myNetworks[i].ssid) == String(selected_ssid)) rtc_ssid_index = i;
+      }
     } else {
       lv_label_set_text(conn_status_label, "Failed to connect.");
     }
+    
+    isScanning = false; // Safe to resume background tasks
 
     lv_timer_t * timer = lv_timer_create([](lv_timer_t * t){
       if(pwd_screen != NULL) { lv_obj_del(pwd_screen); pwd_screen = NULL; }
@@ -335,10 +362,22 @@ static void list_btn_event_cb(lv_event_t * e) {
 }
 
 void build_wifi_scanner_ui() {
-  if(wifi_list != NULL) lv_obj_del(wifi_list);
+  if(wifi_list != NULL) {
+    lv_obj_del(wifi_list);
+    wifi_list = NULL;
+  }
   lv_obj_add_flag(tabview, LV_OBJ_FLAG_HIDDEN);
 
+  // CRASH FIX: Tell the background task to stop using the WiFi module!
+  isScanning = true;
+  delay(150); // Give Core 0 a moment to finish any active HTTP requests
+
+  Serial.println("Scanning...");
   int n = WiFi.scanNetworks();
+  
+  // Re-enable background tasks now that the hard radio scan is done
+  isScanning = false; 
+
   wifi_list = lv_list_create(lv_scr_act());
   lv_obj_set_size(wifi_list, 320, 210);
   lv_obj_align(wifi_list, LV_ALIGN_BOTTOM_MID, 0, 0);
@@ -359,7 +398,6 @@ void build_wifi_scanner_ui() {
   }
 }
 
-// Helper to draw nice borders around menu items
 void apply_menu_border(lv_obj_t * cont) {
   lv_obj_set_style_border_width(cont, 2, 0);
   lv_obj_set_style_border_color(cont, lv_color_hex(0x888888), 0);
@@ -432,21 +470,21 @@ void build_lvgl_ui() {
 
   // 1. Build Network Sub-Page
   lv_obj_t * cont = lv_menu_cont_create(sub_network);
-  apply_menu_border(cont); // Added border
+  apply_menu_border(cont); 
   lv_obj_t * wifi_btn = lv_button_create(cont);
   lv_obj_add_event_cb(wifi_btn, scan_wifi_btn_cb, LV_EVENT_CLICKED, NULL);
   lv_label_set_text(lv_label_create(wifi_btn), "Scan WiFi Networks");
 
   // 2. Build Display Sub-Page
   cont = lv_menu_cont_create(sub_display);
-  apply_menu_border(cont); // Added border
+  apply_menu_border(cont); 
   lv_label_set_text(lv_label_create(cont), "Dark Mode");
   dm_sw = lv_switch_create(cont);
   if(isDarkMode) lv_obj_add_state(dm_sw, LV_STATE_CHECKED);
   lv_obj_add_event_cb(dm_sw, dark_mode_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
   lv_obj_t * cont2 = lv_menu_cont_create(sub_display);
-  apply_menu_border(cont2); // Added border
+  apply_menu_border(cont2); 
   lv_label_set_text(lv_label_create(cont2), "Use Fahrenheit (\xb0""F)");
   unit_sw = lv_switch_create(cont2);
   if(useFahrenheit) lv_obj_add_state(unit_sw, LV_STATE_CHECKED);
@@ -456,7 +494,7 @@ void build_lvgl_ui() {
   char buf[64];
 
   lv_obj_t * cont_t = lv_menu_cont_create(sub_env);
-  apply_menu_border(cont_t); // Added border to group
+  apply_menu_border(cont_t); 
   lv_obj_set_flex_flow(cont_t, LV_FLEX_FLOW_COLUMN); 
   temp_slider_label = lv_label_create(cont_t);
   snprintf(buf, sizeof(buf), "Temp: %.1f - %.1f \xb0%s", tempLow, tempHigh, useFahrenheit ? "F" : "C");
@@ -509,7 +547,6 @@ void build_lvgl_ui() {
   lv_obj_set_width(lux_slider, 240);
   lv_obj_add_event_cb(lux_slider, lux_slider_cb, LV_EVENT_ALL, NULL);
   
-  // Root Menu Mapping
   lv_obj_t * main_page = lv_menu_page_create(menu, NULL);
   
   cont = lv_menu_cont_create(main_page);
@@ -534,7 +571,6 @@ void build_lvgl_ui() {
 // BACKGROUND ARDUINO & CLOUD TASKS
 // ==========================================
 
-// --- UI UPDATER (Runs on Core 1 if Cloud changes a value) ---
 void update_ui_from_data() {
   if(!uiNeedsUpdate) return;
   uiNeedsUpdate = false;
@@ -571,7 +607,6 @@ void update_ui_from_data() {
   }
 }
 
-// --- CLOUD POLLING (Web -> ESP32) ---
 void syncWithCloudSilent() {
   if(WiFi.status() != WL_CONNECTED) return;
   HTTPClient http; http.begin(firebaseURL);
@@ -582,7 +617,6 @@ void syncWithCloudSilent() {
     deserializeJson(doc, payload);
     bool changed = false;
 
-    // --- System Actions ---
     if (doc["reboot_cmd"] == true) {
       sysLog("Web Command: Remote Reboot...");
       HTTPClient patchHttp; patchHttp.begin(firebaseURL); patchHttp.addHeader("Content-Type", "application/json");
@@ -599,7 +633,7 @@ void syncWithCloudSilent() {
     }
     if (doc["sensor_test_cmd"] == true) {
       sysLog("Web Command: Sensor test active.");
-      if (tabview) lv_tabview_set_active(tabview, 0, LV_ANIM_ON); // Auto-swap to dashboard
+      if (tabview) lv_tabview_set_active(tabview, 0, LV_ANIM_ON); 
       HTTPClient patchHttp; patchHttp.begin(firebaseURL); patchHttp.addHeader("Content-Type", "application/json");
       patchHttp.sendRequest("PATCH", "{\"sensor_test_cmd\":false}"); patchHttp.end();
     }
@@ -610,7 +644,6 @@ void syncWithCloudSilent() {
       patchHttp.sendRequest("PATCH", logStr); patchHttp.end();
     }
 
-    // --- State Syncing ---
     if(doc.containsKey("tempLow")) { 
       float v = doc["tempLow"]; 
       if(abs(v - (useFahrenheit ? tempLow : (tempLow*9.0/5.0)+32.0)) > 0.5) { tempLow = useFahrenheit ? v : (v-32.0)*5.0/9.0; changed = true; } 
@@ -640,7 +673,7 @@ void syncWithCloudSilent() {
     }
 
     if(changed) {
-      uiNeedsUpdate = true; // Tell Core 1 to redraw sliders!
+      uiNeedsUpdate = true; 
       sysLog("Cloud settings synced to device.");
     }
   }
@@ -680,9 +713,13 @@ void evaluateControlLogic() {
 
 void cloudTask(void * parameter) {
   for (;;) {
+    // CRASH FIX: Do not perform network operations while Core 1 is hard-scanning WiFi channels!
+    if (isScanning) {
+      vTaskDelay(500 / portTICK_PERIOD_MS);
+      continue;
+    }
+
     if (WiFi.status() == WL_CONNECTED) {
-      
-      // 1. Send manual updates from ESP -> Cloud
       if (triggerCloudPush) {
         HTTPClient http; http.begin(firebaseURL); http.addHeader("Content-Type", "application/json");
         StaticJsonDocument<1024> doc;
@@ -696,15 +733,11 @@ void cloudTask(void * parameter) {
         triggerCloudPush = false;
       }
 
-      // 2. Periodic Routine (Every 5 seconds)
       static unsigned long lastPush = 0;
       if (millis() - lastPush > 5000) {
         lastPush = millis();
-        
-        // Check Cloud for Web Updates (Web -> ESP)
         syncWithCloudSilent(); 
         
-        // Push Live Telemetry (ESP -> Web)
         HTTPClient http; http.begin(firebaseURL); http.addHeader("Content-Type", "application/json");
         StaticJsonDocument<512> doc; 
         doc["liveTemp"] = useFahrenheit ? liveTemp : (liveTemp * 9.0 / 5.0) + 32.0; 
@@ -726,7 +759,6 @@ void setup() {
   Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
 
   SPI.begin(TFT_CLK, TFT_MISO, TFT_MOSI);
-
   tft.begin();
   tft.setRotation(1);
   tft.fillScreen(ILI9341_BLACK);
@@ -746,19 +778,51 @@ void setup() {
 
   build_lvgl_ui();
 
+  // --- FASTER BOOT LOGIC ---
   WiFi.mode(WIFI_STA);
+  bool connected = false;
   int numNetworks = sizeof(myNetworks) / sizeof(myNetworks[0]);
-  for (int i = 0; i < numNetworks; i++) {
-    WiFi.disconnect(); 
-    WiFi.begin(myNetworks[i].ssid, myNetworks[i].pass);
-    for (int k = 0; k < 100; k++) { 
-      if (WiFi.status() == WL_CONNECTED) break; 
-      delay(50); 
+
+  // 1. Check RTC Memory for a known valid connection (Skips the 2.4GHz channel scan entirely!)
+  if (rtc_bssid_valid == 12345 && rtc_ssid_index >= 0 && rtc_ssid_index < numNetworks) {
+    Serial.print("Attempting Fast RTC Boot for: ");
+    Serial.println(myNetworks[rtc_ssid_index].ssid);
+    
+    WiFi.begin(myNetworks[rtc_ssid_index].ssid, myNetworks[rtc_ssid_index].pass, rtc_channel, rtc_bssid, true);
+    for (int k = 0; k < 40; k++) { // Wait up to ~2 seconds
+      if (WiFi.status() == WL_CONNECTED) { 
+        connected = true; 
+        break; 
+      }
+      delay(50);
     }
-    if (WiFi.status() == WL_CONNECTED) break; 
+  }
+
+  // 2. Standard Fallback if Fast Boot failed (or first time turning on)
+  if (!connected) {
+    Serial.println("Standard WiFi Boot...");
+    for (int i = 0; i < numNetworks; i++) {
+      WiFi.disconnect(); 
+      WiFi.begin(myNetworks[i].ssid, myNetworks[i].pass);
+      for (int k = 0; k < 100; k++) { // Wait up to ~5 seconds per network
+        if (WiFi.status() == WL_CONNECTED) { 
+          connected = true; 
+          rtc_ssid_index = i; // Save which network worked!
+          break; 
+        } 
+        delay(50); 
+      }
+      if (connected) break; 
+    }
   }
   
-  if(WiFi.status() == WL_CONNECTED) sysLog("WiFi Connected to " + WiFi.SSID());
+  // 3. Save to RTC for the next reboot
+  if(connected) {
+    sysLog("WiFi Connected to " + WiFi.SSID());
+    rtc_bssid_valid = 12345;
+    rtc_channel = WiFi.channel();
+    memcpy(rtc_bssid, WiFi.BSSID(), 6);
+  }
 
   xTaskCreatePinnedToCore(cloudTask, "CloudTask", 8192, NULL, 1, &CloudTaskHandle, 0);
 }
@@ -767,7 +831,6 @@ void loop() {
   lv_timer_handler();
   checkSerialSensors();
   
-  // This cleanly redraws the LVGL sliders if the background cloud task saw an update!
   if(uiNeedsUpdate) {
     update_ui_from_data();
   }
