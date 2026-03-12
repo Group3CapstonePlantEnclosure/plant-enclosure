@@ -25,7 +25,6 @@
 
         .group-title { font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 24px; font-weight: 700; color: #fff; opacity: 0.8;}
         
-        /* Sliders */
         .slider-container { margin-bottom: 28px; }
         .slider-labels { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 12px; color: var(--muted); }
         .slider-labels span.val { font-weight: bold; color: white; font-size: 16px;}
@@ -34,8 +33,7 @@
         .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; }
         .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; pointer-events: none; top: -6px; z-index: 2; margin: 0; }
         .dual-slider input[type="range"]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 20px; height: 20px; background: #111; border: 2px solid white; border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
-        .dual-slider input[type="range"]::-webkit-slider-thumb:active { transform: scale(1.2); }
-
+        
         .card-temp .slider-track { background: var(--c-temp); }
         .card-temp .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-temp); }
         .card-water .slider-track { background: var(--c-water); }
@@ -53,24 +51,21 @@
         input:checked + .slider-tog { background-color: var(--c-light); }
         input:checked + .slider-tog:before { transform: translateX(22px); background-color: #000; }
 
-        /* AM/PM Button Styling */
+        /* Time Input Styling */
+        .time-group { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+        .time-input-num { width: 55px; text-align: center; font-size: 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 10px; border-radius: 10px; outline: none; }
+        .time-sep { font-weight: bold; font-size: 18px; color: var(--muted); }
         .ampm-btn.active { background: var(--c-light) !important; color: #000 !important; border-color: var(--c-light) !important; }
-        .time-input-num { width: 65px; text-align: center; font-size: 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 10px; border-radius: 10px; outline: none; }
 
         .btn-push { position: sticky; bottom: 20px; width: 100%; max-width: 600px; background: rgba(255,255,255,0.95); color: #000; border: none; padding: 18px; border-radius: 16px; font-weight: 700; font-size: 16px; cursor: pointer; box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 10; transition: 0.2s;}
         .btn-push:active { transform: scale(0.98); }
         #statusMsg { text-align: center; font-size: 13px; margin-top: 15px; color: var(--muted); }
 
         .advanced-toggle { color: var(--muted); font-size: 10pt; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; margin-top: 20px; margin-bottom: 20px; transition: 0.2s; text-align: center; width: 100%; max-width: 600px;}
-        .advanced-toggle:hover { color: white; }
-
         textarea#serialLog { width: 100%; height: 180px; background: #050505; color: var(--c-term); border: 1px solid rgba(0,255,65,0.3); border-radius: 12px; padding: 12px; font-family: monospace; font-size: 12px; resize: none; margin-bottom: 16px; box-sizing: border-box; }
-        textarea#serialLog:focus { outline: none; border-color: var(--c-term); }
         .btn-row { display: flex; gap: 10px; }
         .btn-term { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: white; cursor: pointer; font-weight: bold; transition: 0.2s; }
-        .btn-term:hover { background: rgba(255,255,255,0.1); }
         .btn-danger { background: rgba(255,69,58,0.15); border-color: rgba(255,69,58,0.4); color: #ff453a; }
-        .btn-danger:hover { background: rgba(255,69,58,0.25); }
     </style>
 </head>
 <body>
@@ -80,7 +75,7 @@
         <h2>Control Panel</h2>
     </div>
 
-    <div class="form-container" id="formWrapper">
+    <div class="form-container">
         <div class="card card-temp">
             <div class="group-title">🌡️ Climate Range</div>
             <div class="slider-container">
@@ -96,7 +91,7 @@
         <div class="card card-water">
             <div class="group-title">💧 Moisture & Humidity</div>
             <div class="slider-container">
-                <div class="slider-labels"><span>Humidity Target</span> <span class="val" id="humVal">40% - 60%</span></div>
+                <div class="slider-labels"><span>Humidity</span> <span class="val" id="humVal">40% - 60%</span></div>
                 <div class="dual-slider">
                     <div class="slider-track" id="humTrack"></div>
                     <input type="range" id="humLow" min="0" max="100" step="1" oninput="updateSliders('hum')">
@@ -104,7 +99,7 @@
                 </div>
             </div>
             <div class="slider-container" style="margin-bottom:0;">
-                <div class="slider-labels"><span>Soil Moisture Target</span> <span class="val" id="soilVal">20% - 50%</span></div>
+                <div class="slider-labels"><span>Soil Moisture</span> <span class="val" id="soilVal">20% - 50%</span></div>
                 <div class="dual-slider">
                     <div class="slider-track" id="soilTrack"></div>
                     <input type="range" id="soilLow" min="0" max="100" step="1" oninput="updateSliders('soil')">
@@ -122,9 +117,11 @@
 
             <div style="margin-bottom: 24px;">
                 <div class="slider-labels"><span>Turn On Time</span></div>
-                <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                    <input type="number" id="onTimeNum" min="1" max="12" value="8" class="time-input-num">
-                    <div class="btn-row" style="flex: 1;">
+                <div class="time-group">
+                    <input type="number" id="onH" min="1" max="12" value="8" class="time-input-num">
+                    <span class="time-sep">:</span>
+                    <input type="number" id="onM" min="0" max="59" value="00" class="time-input-num">
+                    <div class="btn-row" style="flex: 1; margin-left: 5px;">
                         <button class="btn-term ampm-btn" id="onAM" onclick="setPeriod('on', 'AM')">AM</button>
                         <button class="btn-term ampm-btn" id="onPM" onclick="setPeriod('on', 'PM')">PM</button>
                     </div>
@@ -133,9 +130,11 @@
 
             <div style="margin-bottom: 24px;">
                 <div class="slider-labels"><span>Turn Off Time</span></div>
-                <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                    <input type="number" id="offTimeNum" min="1" max="12" value="8" class="time-input-num">
-                    <div class="btn-row" style="flex: 1;">
+                <div class="time-group">
+                    <input type="number" id="offH" min="1" max="12" value="8" class="time-input-num">
+                    <span class="time-sep">:</span>
+                    <input type="number" id="offM" min="0" max="59" value="00" class="time-input-num">
+                    <div class="btn-row" style="flex: 1; margin-left: 5px;">
                         <button class="btn-term ampm-btn" id="offAM" onclick="setPeriod('off', 'AM')">AM</button>
                         <button class="btn-term ampm-btn" id="offPM" onclick="setPeriod('off', 'PM')">PM</button>
                     </div>
@@ -143,9 +142,9 @@
             </div>
 
             <div class="slider-container" style="margin-bottom:0;">
-                <div class="slider-labels"><span>Lux Auto-on Threshold</span> <span class="val" id="luxVal">30000 lux</span></div>
+                <div class="slider-labels"><span>Lux Threshold</span> <span class="val" id="luxVal">30000 lux</span></div>
                 <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
-                    <input type="range" id="luxThreshold" min="0" max="100000" step="1000" value="30000" oninput="updateSingles()">
+                    <input type="range" id="luxThreshold" min="0" max="100000" step="1000" oninput="updateSingles()">
                 </div>
             </div>
         </div>
@@ -154,28 +153,19 @@
     <div class="advanced-toggle" id="advLabel" onclick="toggleAdvanced()">▼ Advanced Settings</div>
 
     <div class="form-container" id="advancedSettings" style="display: none; margin-bottom: 20px;">
-        
         <div class="card card-sys">
-            <div class="group-title">⚙️ System Configuration</div>
+            <div class="group-title">⚙️ System</div>
             <div class="slider-container">
-                <div class="slider-labels"><span>Screen Brightness</span> <span class="val" id="brightVal">10 / 10</span></div>
-                <div class="dual-slider"><div class="slider-track" id="brightTrack" style="width:100%"></div>
-                    <input type="range" id="globalBrightness" min="1" max="10" value="10" oninput="updateSingles()">
+                <div class="slider-labels"><span>Brightness</span> <span class="val" id="brightVal">10 / 10</span></div>
+                <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
+                    <input type="range" id="globalBrightness" min="1" max="10" oninput="updateSingles()">
                 </div>
             </div>
             <div class="slider-container" style="margin-bottom:0;">
-                <div class="slider-labels"><span>Time Zone (NTP Sync)</span> <span class="val" id="tzVal">UTC -5</span></div>
+                <div class="slider-labels"><span>Time Zone</span> <span class="val" id="tzVal">UTC -5</span></div>
                 <div class="dual-slider"><div class="slider-track" style="width:100%"></div>
-                    <input type="range" id="timeZoneOffset" min="-12" max="14" value="-5" oninput="updateSingles()">
+                    <input type="range" id="timeZoneOffset" min="-12" max="14" oninput="updateSingles()">
                 </div>
-            </div>
-        </div>
-
-        <div class="card card-sys">
-            <div class="group-title">🛠️ System Actions</div>
-            <div class="btn-row">
-                <button class="btn-term btn-danger" id="globalResetBtn">Factory Reset</button>
-                <button class="btn-term" id="sensorTestBtn" style="color: var(--c-water); border-color: rgba(79, 195, 247, 0.4);">Run Sensor Test</button>
             </div>
         </div>
 
@@ -183,8 +173,8 @@
             <div class="group-title">☁️ Cloud Serial Monitor</div>
             <textarea id="serialLog" readonly>Waiting for connection...</textarea>
             <div class="btn-row">
-                <button class="btn-term" id="fetchLogBtn">🔄 Request Logs</button>
-                <button class="btn-term btn-danger" id="resetBtn">⚠️ Remote Reboot</button>
+                <button class="btn-term" id="fetchLogBtn">🔄 Logs</button>
+                <button class="btn-term btn-danger" id="resetBtn">⚠️ Reboot</button>
             </div>
         </div>
     </div>
@@ -195,26 +185,8 @@
     <script type="module">
         import { db, ref, get, update, onValue } from './firebase-config.js';
 
-        // State for time periods
         let periods = { on: 'AM', off: 'PM' };
-
-        const inputs = {
-            tempLow: document.getElementById("tempLow"), tempHigh: document.getElementById("tempHigh"),
-            humLow: document.getElementById("humLow"), humHigh: document.getElementById("humHigh"), 
-            soilLow: document.getElementById("soilLow"), soilHigh: document.getElementById("soilHigh"), 
-            luxThreshold: document.getElementById("luxThreshold"), timerEnabled: document.getElementById("timerEnabled"), 
-            globalBrightness: document.getElementById("globalBrightness"), timeZoneOffset: document.getElementById("timeZoneOffset")
-        };
-
-        window.toggleAdvanced = function() {
-            const adv = document.getElementById("advancedSettings");
-            const label = document.getElementById("advLabel");
-            if (adv.style.display === "none") {
-                adv.style.display = "flex"; label.textContent = "▲ Close Advanced Settings";
-            } else {
-                adv.style.display = "none"; label.textContent = "▼ Advanced Settings";
-            }
-        }
+        const settingsRef = ref(db, 'settings');
 
         window.setPeriod = function(type, p) {
             periods[type] = p;
@@ -222,23 +194,49 @@
             document.getElementById(type + 'PM').classList.toggle('active', p === 'PM');
         }
 
-        function get24Hour(id, period) {
-            let h = parseInt(document.getElementById(id).value) || 12;
+        window.toggleAdvanced = function() {
+            const adv = document.getElementById("advancedSettings");
+            const label = document.getElementById("advLabel");
+            adv.style.display = adv.style.display === "none" ? "flex" : "none";
+            label.textContent = adv.style.display === "none" ? "▼ Advanced Settings" : "▲ Close Advanced Settings";
+        }
+
+        function calculateDecimalHour(hId, mId, period) {
+            let h = parseInt(document.getElementById(hId).value) || 12;
+            let m = parseInt(document.getElementById(mId).value) || 0;
             if (h > 12) h = 12; if (h < 1) h = 1;
+            if (m > 59) m = 59; if (m < 0) m = 0;
+            
             if (period === 'PM' && h < 12) h += 12;
             if (period === 'AM' && h === 12) h = 0;
-            return h;
+            
+            return parseFloat((h + (m / 60)).toFixed(2));
+        }
+
+        function parseDecimalHour(decimalTime, hId, mId, type) {
+            let h24 = Math.floor(decimalTime);
+            let m = Math.round((decimalTime - h24) * 60);
+            let period = h24 >= 12 ? 'PM' : 'AM';
+            let h12 = h24 % 12 || 12;
+            
+            document.getElementById(hId).value = h12;
+            document.getElementById(mId).value = m.toString().padStart(2, '0');
+            setPeriod(type, period);
         }
 
         window.updateSliders = function(type) {
-            const low = document.getElementById(type + "Low"); const high = document.getElementById(type + "High");
-            const track = document.getElementById(type + "Track"); const label = document.getElementById(type + "Val");
+            const low = document.getElementById(type + "Low");
+            const high = document.getElementById(type + "High");
+            const track = document.getElementById(type + "Track");
+            const label = document.getElementById(type + "Val");
             const suffix = type === 'temp' ? '°F' : '%';
+            
             let minV = parseInt(low.value); let maxV = parseInt(high.value);
             if (minV >= maxV) { low.value = maxV - 1; minV = maxV - 1; }
-            const minBound = parseInt(low.min); const maxBound = parseInt(low.max);
-            const p1 = ((minV - minBound) / (maxBound - minBound)) * 100;
-            const p2 = ((maxV - minBound) / (maxBound - minBound)) * 100;
+            
+            const range = low.max - low.min;
+            const p1 = ((minV - low.min) / range) * 100;
+            const p2 = ((maxV - low.min) / range) * 100;
             track.style.left = p1 + "%"; track.style.width = (p2 - p1) + "%";
             label.textContent = `${minV}${suffix} - ${maxV}${suffix}`;
         }
@@ -250,78 +248,70 @@
             document.getElementById("tzVal").textContent = "UTC " + (tz >= 0 ? "+" : "") + tz;
         }
 
-        const settingsRef = ref(db, 'settings');
-
+        // Initial Load
         get(settingsRef).then((snapshot) => {
             const d = snapshot.val();
             if (d) {
-                for (const key in d) { 
-                    if (inputs[key] !== undefined) {
-                        if (key === 'timerEnabled') inputs[key].checked = d[key];
-                        else inputs[key].value = d[key];
-                    }
-                    // Handle time conversions for the new UI
-                    if (key === 'timeOnHour') {
-                        let h = d[key];
-                        setPeriod('on', h >= 12 ? 'PM' : 'AM');
-                        document.getElementById("onTimeNum").value = h % 12 || 12;
-                    }
-                    if (key === 'timeOffHour') {
-                        let h = d[key];
-                        setPeriod('off', h >= 12 ? 'PM' : 'AM');
-                        document.getElementById("offTimeNum").value = h % 12 || 12;
-                    }
+                if (d.tempLow !== undefined) {
+                    document.getElementById("tempLow").value = d.tempLow;
+                    document.getElementById("tempHigh").value = d.tempHigh;
+                    document.getElementById("humLow").value = d.humLow;
+                    document.getElementById("humHigh").value = d.humHigh;
+                    document.getElementById("soilLow").value = d.soilLow;
+                    document.getElementById("soilHigh").value = d.soilHigh;
+                    document.getElementById("luxThreshold").value = d.luxThreshold;
+                    document.getElementById("timerEnabled").checked = d.timerEnabled;
+                    document.getElementById("globalBrightness").value = d.globalBrightness;
+                    document.getElementById("timeZoneOffset").value = d.timeZoneOffset;
+                    
+                    parseDecimalHour(d.timeOnHour, "onH", "onM", "on");
+                    parseDecimalHour(d.timeOffHour, "offH", "offM", "off");
                 }
             }
-            window.updateSliders('temp'); window.updateSliders('hum'); window.updateSliders('soil'); window.updateSingles();
-        }).catch(err => console.error(err));
-
-        onValue(settingsRef, (snapshot) => {
-            const d = snapshot.val();
-            if(d && d.system_logs) {
-                const logBox = document.getElementById("serialLog");
-                logBox.value = d.system_logs; logBox.scrollTop = logBox.scrollHeight;
-            }
+            ['temp', 'hum', 'soil'].forEach(updateSliders);
+            updateSingles();
         });
 
         document.getElementById("sendBtn").addEventListener("click", async () => {
-            const sendBtn = document.getElementById("sendBtn"); const statusMsg = document.getElementById("statusMsg");
-            sendBtn.disabled = true; sendBtn.textContent = "Syncing with Cloud...";
+            const btn = document.getElementById("sendBtn");
+            btn.disabled = true; btn.textContent = "Syncing...";
             
-            const newSettings = {
-                tempLow: parseFloat(inputs.tempLow.value), tempHigh: parseFloat(inputs.tempHigh.value),
-                humLow: parseFloat(inputs.humLow.value), humHigh: parseFloat(inputs.humHigh.value),
-                soilLow: parseInt(inputs.soilLow.value), soilHigh: parseInt(inputs.soilHigh.value),
-                timeOnHour: get24Hour("onTimeNum", periods.on), 
-                timeOffHour: get24Hour("offTimeNum", periods.off),
-                luxThreshold: parseInt(inputs.luxThreshold.value), timerEnabled: inputs.timerEnabled.checked,
-                globalBrightness: parseInt(inputs.globalBrightness.value), timeZoneOffset: parseInt(inputs.timeZoneOffset.value)
+            const data = {
+                tempLow: parseFloat(document.getElementById("tempLow").value),
+                tempHigh: parseFloat(document.getElementById("tempHigh").value),
+                humLow: parseFloat(document.getElementById("humLow").value),
+                humHigh: parseFloat(document.getElementById("humHigh").value),
+                soilLow: parseInt(document.getElementById("soilLow").value),
+                soilHigh: parseInt(document.getElementById("soilHigh").value),
+                timeOnHour: calculateDecimalHour("onH", "onM", periods.on),
+                timeOffHour: calculateDecimalHour("offH", "offM", periods.off),
+                luxThreshold: parseInt(document.getElementById("luxThreshold").value),
+                timerEnabled: document.getElementById("timerEnabled").checked,
+                globalBrightness: parseInt(document.getElementById("globalBrightness").value),
+                timeZoneOffset: parseInt(document.getElementById("timeZoneOffset").value)
             };
 
             try {
-                await update(settingsRef, newSettings);
-                statusMsg.textContent = "✅ Cloud Database Updated! Hardware syncing...";
-                sendBtn.textContent = "Sync Complete"; sendBtn.style.background = "#4fc3f7"; 
-                setTimeout(() => { sendBtn.disabled = false; sendBtn.textContent = "Push to Enclosure Cloud ☁️"; sendBtn.style.background = ""; }, 3000);
-            } catch (err) { statusMsg.textContent = `❌ Error: ${err.message}`; sendBtn.disabled = false; sendBtn.textContent = "Try Again"; }
+                await update(settingsRef, data);
+                document.getElementById("statusMsg").textContent = "✅ Cloud Updated!";
+                btn.textContent = "Success";
+                setTimeout(() => { btn.disabled = false; btn.textContent = "Push to Enclosure Cloud ☁️"; }, 2000);
+            } catch (e) {
+                document.getElementById("statusMsg").textContent = "❌ Error: " + e.message;
+                btn.disabled = false;
+            }
         });
 
-        // Command logic stays the same
-        const logBox = document.getElementById("serialLog");
-        document.getElementById("globalResetBtn").addEventListener("click", async () => {
-            if(!confirm("⚠️ Reset enclosure settings?")) return;
-            await update(settingsRef, { global_reset_cmd: true });
+        onValue(settingsRef, (s) => {
+            const d = s.val();
+            if(d && d.system_logs) {
+                const lb = document.getElementById("serialLog");
+                lb.value = d.system_logs; lb.scrollTop = lb.scrollHeight;
+            }
         });
-        document.getElementById("sensorTestBtn").addEventListener("click", async () => {
-            await update(settingsRef, { sensor_test_cmd: true });
-        });
-        document.getElementById("fetchLogBtn").addEventListener("click", async () => {
-            await update(settingsRef, { fetch_logs_cmd: true });
-        });
-        document.getElementById("resetBtn").addEventListener("click", async () => {
-            if(!confirm("⚠️ Remote reboot?")) return;
-            await update(settingsRef, { reboot_cmd: true });
-        });
+
+        document.getElementById("fetchLogBtn").onclick = () => update(settingsRef, { fetch_logs_cmd: true });
+        document.getElementById("resetBtn").onclick = () => confirm("Reboot?") && update(settingsRef, { reboot_cmd: true });
     </script>
 </body>
 </html>
