@@ -31,6 +31,7 @@
         .slider-labels span.val { font-weight: bold; color: white; font-size: 16px;}
         
         .dual-slider { position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 10px; }
+        /* CSS matched perfectly for sliders */
         .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; left: 0; }
         .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; pointer-events: none; top: -6px; z-index: 2; margin: 0; left: 0; box-sizing: border-box; }
         .dual-slider input[type="range"]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 20px; height: 20px; background: #111; border: 2px solid white; border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
@@ -75,7 +76,7 @@
 <body>
 
     <div class="header">
-        <a href="index.html" class="back-btn">← Home</a>
+        <a href="index.html" class="back-btn" onclick="turnOffFlash()">← Home</a>
         <h2>Control Panel</h2>
     </div>
 
@@ -88,7 +89,7 @@
                 <div class="slider-labels"><span>Flash Brightness</span> <span class="val" id="flashVal">0%</span></div>
                 <div class="dual-slider">
                     <div class="slider-track" id="flashTrack"></div>
-                    <input type="range" id="flashSlider" min="0" max="100" value="0" step="1" oninput="updateSingles()">
+                    <input type="range" id="flashSlider" min="0" max="100" value="0" step="1" oninput="updateSingles()" onchange="finalizeFlash()">
                 </div>
             </div>
 
@@ -98,7 +99,7 @@
                 
                 <div class="btn-row" style="width: 100%;">
                     <button class="btn-term" id="scanBtn" style="color: var(--c-cam); border-color: var(--c-cam);">CAPTURE & IDENTIFY</button>
-                    <a href="monitor.html" class="btn-term" style="text-align: center; text-decoration: none;">Live Video Monitor 📺</a>
+                    <a href="monitor.html" class="btn-term" style="text-align: center; text-decoration: none;" onclick="turnOffFlash()">Live Video Monitor 📺</a>
                 </div>
             </div>
         </div>
@@ -237,14 +238,21 @@
         const settingsRef = ref(db, 'settings');
         const PLANTNET_KEY = "2b1020AMM4X5X1BCCGDgAKF9O"; 
 
+        let flashTimeout = null;
+
         window.updateSingles = function() {
             const flash = document.getElementById("flashSlider").value;
             document.getElementById("flashVal").textContent = flash + "%";
             document.getElementById("flashTrack").style.width = flash + "%";
             
-            if(activeCameraIp) {
-                let pwmValue = Math.round((flash / 100) * 255);
-                fetch(`${activeCameraIp}/flash?v=${pwmValue}`).catch(() => {});
+            // The Throttled Network Request (Updates safely 10x a second)
+            if(activeCameraIp && !flashTimeout) {
+                flashTimeout = setTimeout(() => {
+                    const currentVal = document.getElementById('flashSlider').value;
+                    let pwmValue = Math.round((currentVal / 100) * 255);
+                    fetch(`${activeCameraIp}/flash?v=${pwmValue}`).catch(() => {});
+                    flashTimeout = null;
+                }, 100);
             }
 
             document.getElementById("luxVal").textContent = document.getElementById("luxThreshold").value + " lux";
@@ -253,12 +261,26 @@
             document.getElementById("tzVal").textContent = "UTC " + (tz >= 0 ? "+" : "") + tz;
         }
 
-        // NEW: Reset Flash to 0 upon exiting the page
-        window.addEventListener('pagehide', () => {
+        // Send final precise value when you let go
+        window.finalizeFlash = function() {
             if(activeCameraIp) {
-                // keepalive: true ensures the fetch completes even if the page unloads
+                const val = document.getElementById('flashSlider').value;
+                let pwmValue = Math.round((val / 100) * 255);
+                fetch(`${activeCameraIp}/flash?v=${pwmValue}`).catch(() => {});
+            }
+        };
+
+        // EXPLICIT EXIT LOGIC
+        window.turnOffFlash = function() {
+            if(activeCameraIp) {
                 fetch(`${activeCameraIp}/flash?v=0`, { keepalive: true }).catch(()=>{});
             }
+        };
+
+        // Catching browser back buttons or tab closing
+        window.addEventListener('pagehide', window.turnOffFlash);
+        window.addEventListener('visibilitychange', () => {
+            if(document.visibilityState === 'hidden') window.turnOffFlash();
         });
 
         document.getElementById("scanBtn").onclick = async () => {
