@@ -28,14 +28,14 @@
         #videoFeed { width: 100%; border-radius: 12px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.1); display: none; background: #000; min-height: 200px; object-fit: contain;}
         #camStatus { color: var(--muted); font-size: 14px; margin-top: 10px; }
         
-        /* CSS FIX: Added left: 0 and box-sizing to keep slider aligned */
+        /* CSS FIX: Matched identically to control.html to fix middle-resting thumb and alignment */
         .dual-slider { position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 15px; margin-bottom: 10px; }
-        .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; background: var(--accent); left: 0; }
-        .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; top: -6px; z-index: 2; margin: 0; left: 0; box-sizing: border-box; }
-        .dual-slider input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; background: #111; border: 2px solid var(--accent); border-radius: 50%; cursor: pointer; }
+        .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; left: 0; background: var(--accent); }
+        .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; pointer-events: none; top: -6px; z-index: 2; margin: 0; left: 0; box-sizing: border-box; }
+        .dual-slider input[type="range"]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 20px; height: 20px; background: #111; border: 2px solid var(--accent); border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
 
         .actions { width: 100%; max-width: 600px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 30px; }
-        .btn { appearance: none; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.08); color: white; padding: 16px; border-radius: 14px; font-weight: 600; text-decoration: none; text-align: center; transition: 0.2s; }
+        .btn { appearance: none; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.08); color: white; padding: 16px; border-radius: 14px; font-weight: 600; text-decoration: none; text-align: center; transition: 0.2s; cursor: pointer;}
         .btn:hover { background: rgba(255,255,255,0.15); }
         #loading { width: 100%; text-align: center; color: var(--accent); margin-top: 50px; }
     </style>
@@ -63,7 +63,13 @@
             
             <div class="dual-slider">
                 <div class="slider-track" id="streamFlashTrack" style="width: 0%;"></div>
-                <input type="range" id="streamFlashSlider" min="0" max="100" value="0" step="1">
+                <input type="range" id="streamFlashSlider" min="0" max="100" value="0" step="1" oninput="updateStreamFlash()">
+            </div>
+            
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 15px; width: 100%; margin-top: 20px;">
+                <img id="plantPreview" src="" style="width: 100%; border-radius: 12px; display: none; border: 1px solid rgba(255,255,255,0.1);">
+                <div id="idStatus" style="font-size: 14px; color: var(--muted); text-align: center;">Ready to scan...</div>
+                <button class="btn" id="scanBtn" style="width: 100%; color: var(--accent); border-color: var(--accent);">CAPTURE & IDENTIFY</button>
             </div>
         </div>
 
@@ -112,10 +118,11 @@
     </div>
 
 <script type="module">
-    import { db, ref, onValue } from './firebase-config.js';
+    import { db, ref, update, onValue } from './firebase-config.js';
 
     const settingsRef = ref(db, 'settings');
     let activeCameraIp = null;
+    const PLANTNET_KEY = "2b1020AMM4X5X1BCCGDgAKF9O"; 
 
     window.formatFullTime = function(hour, minute) {
         let h = hour % 12 || 12;
@@ -124,11 +131,9 @@
         return `${h}:${m} ${ampm}`;
     }
 
-    const flashSlider = document.getElementById('streamFlashSlider');
-    
-    // Restored: Updates UI and sends fetch in real-time as you slide
-    flashSlider.addEventListener('input', (e) => {
-        const val = e.target.value;
+    // NEW: Real-time slider update mirroring control.html logic
+    window.updateStreamFlash = function() {
+        const val = document.getElementById('streamFlashSlider').value;
         document.getElementById('streamFlashTrack').style.width = val + '%';
         document.getElementById('flashValText').textContent = `Flash: ${val}%`;
         
@@ -136,13 +141,68 @@
             let pwmValue = Math.round((val / 100) * 255);
             fetch(`${activeCameraIp}/flash?v=${pwmValue}`).catch(() => {});
         }
+    };
+
+    // NEW: Reset Flash to 0 upon exiting the page
+    window.addEventListener('pagehide', () => {
+        if(activeCameraIp) {
+            fetch(`${activeCameraIp}/flash?v=0`, { keepalive: true }).catch(()=>{});
+        }
     });
+
+    // NEW: PlantNet Scanner logic mirrored from control.html
+    document.getElementById("scanBtn").onclick = async () => {
+        if(!activeCameraIp) {
+            alert("Camera IP not found. Is the ESP32 connected to WiFi?");
+            return;
+        }
+
+        const status = document.getElementById("idStatus");
+        const preview = document.getElementById("plantPreview");
+        const btn = document.getElementById("scanBtn");
+
+        btn.disabled = true;
+        status.textContent = "📸 Snapping photo...";
+
+        try {
+            const response = await fetch(`${activeCameraIp}/capture`);
+            if (!response.ok) throw new Error("Camera not responding.");
+            
+            const blob = await response.blob();
+            preview.src = URL.createObjectURL(blob);
+            preview.style.display = "block";
+
+            status.textContent = "🧠 Identifying species...";
+            const formData = new FormData();
+            formData.append('images', blob);
+            formData.append('organs', 'leaf');
+
+            const idRes = await fetch(`https://my-api.plantnet.org/v2/identify/all?api-key=${PLANTNET_KEY}`, {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await idRes.json();
+            if(!result.results) throw new Error("Plant not recognized. Try adjusting flash/lighting!");
+            
+            const bestMatch = result.results[0];
+            const plantName = bestMatch.species.commonNames[0] || bestMatch.species.scientificName;
+
+            status.innerHTML = `✅ Found: <b>${plantName}</b><br>(${(bestMatch.score * 100).toFixed(1)}% accuracy)`;
+
+            await update(settingsRef, { identified_plant: plantName });
+
+        } catch (e) {
+            status.textContent = "❌ Error: " + e.message;
+        } finally {
+            btn.disabled = false;
+        }
+    };
 
     onValue(settingsRef, (snapshot) => {
         const data = snapshot.val();
         if (data) {
             
-            // --- CONNECT CAMERA DYNAMICALLY ---
             if (data.camera_ip && data.camera_ip !== activeCameraIp) {
                 activeCameraIp = data.camera_ip;
                 document.getElementById("camStatus").style.display = "none";
@@ -151,19 +211,16 @@
                 videoFeed.style.display = "block";
             }
             
-            // --- Current Readings ---
             document.getElementById("dispTemp").textContent = data.liveTemp !== undefined ? `${data.liveTemp}°F` : "-- °F";
             document.getElementById("dispHum").textContent = data.liveHum !== undefined ? `${data.liveHum}%` : "-- %";
             document.getElementById("dispSoil").textContent = data.liveSoil !== undefined ? `${data.liveSoil}%` : "-- %";
             document.getElementById("dispLux").textContent = data.liveLux !== undefined ? `${data.liveLux} lux` : "-- lux";
 
-            // --- Target Displays ---
             document.getElementById("dispTemp").nextElementSibling.textContent = `Target: ${data.tempLow}° - ${data.tempHigh}°`;
             document.getElementById("dispHum").nextElementSibling.textContent = `Target: ${data.humLow}% - ${data.humHigh}%`;
             document.getElementById("dispSoil").nextElementSibling.textContent = `Target: ${data.soilLow}% - ${data.soilHigh}%`;
             document.getElementById("dispLux").nextElementSibling.textContent = `Limit: ${data.luxThreshold} lux`;
 
-            // --- System Settings ---
             document.getElementById("dispBright").textContent = `${data.globalBrightness || 10}/10`;
             let onTime = window.formatFullTime(data.timeOnHour, data.timeOnMin);
             let offTime = window.formatFullTime(data.timeOffHour, data.timeOffMin);
@@ -173,7 +230,6 @@
             tState.textContent = data.timerEnabled ? "Timer Active" : "Timer Disabled";
             tState.style.color = data.timerEnabled ? "#2cff8a" : "var(--muted)";
             
-            // Show UI
             document.getElementById("loading").style.display = "none";
             document.getElementById("dashboard").style.display = "grid";
             document.getElementById("actions").style.display = "grid";
