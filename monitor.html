@@ -28,7 +28,6 @@
         #videoFeed { width: 100%; border-radius: 12px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.1); display: none; background: #000; min-height: 200px; object-fit: contain;}
         #camStatus { color: var(--muted); font-size: 14px; margin-top: 10px; }
         
-        /* CSS matched perfectly to fix middle-resting thumb and alignment */
         .dual-slider { position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 15px; margin-bottom: 10px; }
         .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; left: 0; background: var(--accent); }
         .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; pointer-events: none; top: -6px; z-index: 2; margin: 0; left: 0; box-sizing: border-box; }
@@ -59,7 +58,9 @@
             </div>
             
             <div id="camStatus">Loading Camera IP from Firebase...</div>
-            <img id="videoFeed" src="" alt="Camera Stream Loading...">
+            
+            <button id="streamToggleBtn" class="btn" style="width: 100%; margin-bottom: 10px; display: none; color: var(--accent); border-color: rgba(255, 184, 79, 0.4); padding: 10px;">▶ Start Live Stream</button>
+            <img id="videoFeed" src="" alt="Camera Stream (Paused)">
             
             <div class="dual-slider">
                 <div class="slider-track" id="streamFlashTrack" style="width: 0%;"></div>
@@ -70,7 +71,7 @@
                 <div class="data-label" style="width: 100%; text-align: left;">🌿 Plant AI Scanner</div>
                 <img id="plantPreview" src="" style="width: 100%; border-radius: 12px; display: none; border: 1px solid rgba(255,255,255,0.1);">
                 <div id="idStatus" style="font-size: 14px; color: var(--muted); text-align: center;">Ready to scan...</div>
-                <button class="btn" id="scanBtn" style="width: 100%; color: var(--accent); border-color: rgba(255, 184, 79, 0.4);">CAPTURE & IDENTIFY</button>
+                <button class="btn" id="scanBtn" style="width: 100%; color: var(--accent); border-color: rgba(255, 184, 79, 0.4); padding: 12px;">CAPTURE & IDENTIFY</button>
             </div>
         </div>
 
@@ -124,6 +125,8 @@
     const settingsRef = ref(db, 'settings');
     let activeCameraIp = null;
     let flashTimeout = null;
+    let isStreamRunning = false;
+    let wasStreamRunning = false;
     const PLANTNET_KEY = "2b1020AMM4X5X1BCCGDgAKF9O"; 
 
     window.formatFullTime = function(hour, minute) {
@@ -133,15 +136,55 @@
         return `${h}:${m} ${ampm}`;
     }
 
-    // The Throttled Network Request (Prevents crashing the Live Video Stream)
+    // --- NEW: Stream Toggle Logic ---
+    function startStream() {
+        if(!activeCameraIp) return;
+        document.getElementById("videoFeed").src = `${activeCameraIp}/stream`;
+        document.getElementById("videoFeed").style.display = "block";
+        const btn = document.getElementById("streamToggleBtn");
+        btn.textContent = "⏹ Stop Live Stream";
+        btn.style.color = "#ff453a"; // Red
+        btn.style.borderColor = "rgba(255,69,58,0.4)";
+        isStreamRunning = true;
+    }
+
+    function stopStream() {
+        document.getElementById("videoFeed").src = ""; // Kills connection
+        document.getElementById("videoFeed").style.display = "none";
+        const btn = document.getElementById("streamToggleBtn");
+        btn.textContent = "▶ Start Live Stream";
+        btn.style.color = "var(--accent)";
+        btn.style.borderColor = "rgba(255, 184, 79, 0.4)";
+        isStreamRunning = false;
+    }
+
+    document.getElementById("streamToggleBtn").onclick = () => {
+        if(isStreamRunning) stopStream();
+        else startStream();
+    };
+
+    // --- NEW: Auto-Pause Stream on Slider Grab ---
+    const flashSlider = document.getElementById('streamFlashSlider');
+    
+    function pauseForSlider() {
+        wasStreamRunning = isStreamRunning;
+        if (isStreamRunning) {
+            stopStream(); // Frees up the network for the slider!
+        }
+    }
+    
+    // Triggers the moment you click or touch the slider track/thumb
+    flashSlider.addEventListener('mousedown', pauseForSlider);
+    flashSlider.addEventListener('touchstart', pauseForSlider, {passive: true});
+
     window.updateStreamFlash = function() {
-        const val = document.getElementById('streamFlashSlider').value;
+        const val = flashSlider.value;
         document.getElementById('streamFlashTrack').style.width = val + '%';
         document.getElementById('flashValText').textContent = `Flash: ${val}%`;
         
         if (activeCameraIp && !flashTimeout) {
             flashTimeout = setTimeout(() => {
-                const currentVal = document.getElementById('streamFlashSlider').value;
+                const currentVal = flashSlider.value;
                 let pwmValue = Math.round((currentVal / 100) * 255);
                 fetch(`${activeCameraIp}/flash?v=${pwmValue}`).catch(() => {});
                 flashTimeout = null;
@@ -149,31 +192,32 @@
         }
     };
 
-    // Ensures the exact value is sent when you stop dragging
     window.finalizeStreamFlash = function() {
         if (activeCameraIp) {
-            const val = document.getElementById('streamFlashSlider').value;
+            const val = flashSlider.value;
             let pwmValue = Math.round((val / 100) * 255);
             fetch(`${activeCameraIp}/flash?v=${pwmValue}`).catch(() => {});
         }
+        // If the stream was running before you grabbed the slider, turn it back on!
+        if (wasStreamRunning) {
+            setTimeout(startStream, 200); // 200ms delay ensures the flash fetch gets out first
+        }
     };
 
-    // EXPLICIT EXIT LOGIC: Kills the video stream FIRST to free up the network buffer!
+    // Exit Logic
     window.turnOffFlash = function() {
         if(activeCameraIp) {
-            const feed = document.getElementById("videoFeed");
-            if(feed) feed.src = ""; 
+            stopStream(); // Ensure stream is dead so the flash command escapes
             fetch(`${activeCameraIp}/flash?v=0`, { keepalive: true }).catch(()=>{});
         }
     };
 
-    // Catch tab closing or browser exit
     window.addEventListener('pagehide', window.turnOffFlash);
     window.addEventListener('visibilitychange', () => {
         if(document.visibilityState === 'hidden') window.turnOffFlash();
     });
 
-    // Identical Plant Scanner Logic for Monitor Page
+    // PlantNet Scanner
     document.getElementById("scanBtn").onclick = async () => {
         if(!activeCameraIp) {
             alert("Camera IP not found. Is the ESP32 connected to WiFi?");
@@ -183,6 +227,9 @@
         const status = document.getElementById("idStatus");
         const preview = document.getElementById("plantPreview");
         const btn = document.getElementById("scanBtn");
+
+        // Pause stream so capture doesn't fail
+        if (isStreamRunning) stopStream(); 
 
         btn.disabled = true;
         status.textContent = "📸 Snapping photo...";
@@ -226,12 +273,11 @@
         const data = snapshot.val();
         if (data) {
             
+            // Auto-load IP, but do NOT auto-start the stream
             if (data.camera_ip && data.camera_ip !== activeCameraIp) {
                 activeCameraIp = data.camera_ip;
                 document.getElementById("camStatus").style.display = "none";
-                const videoFeed = document.getElementById("videoFeed");
-                videoFeed.src = `${activeCameraIp}/stream`;
-                videoFeed.style.display = "block";
+                document.getElementById("streamToggleBtn").style.display = "block";
             }
             
             document.getElementById("dispTemp").textContent = data.liveTemp !== undefined ? `${data.liveTemp}°F` : "-- °F";
