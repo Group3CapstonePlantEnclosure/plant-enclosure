@@ -69,8 +69,6 @@
 
         .ctrl-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         .ctrl-label { font-size: 13px; color: var(--muted); }
-        
-        /* FIX: Dropdowns are now dark grey with white text so they are readable without hover */
         .cam-select { background: #222; color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 10px; border-radius: 8px; outline: none; font-size: 13px; cursor: pointer;}
         .cam-select option { background: #222; color: white; }
         
@@ -253,8 +251,7 @@
 
     function startStream() {
         if(!activeCameraIp) return;
-        // Adding a cache-busting timestamp forces the browser to reconnect to the feed completely
-        // This is crucial for resolution changes so the browser doesn't try to show an old frame size
+        // The Cache Buster (?t=...) forces the browser to reconnect perfectly if resolution changed
         document.getElementById("videoFeed").src = `${activeCameraIp}/stream?t=${new Date().getTime()}`;
         document.getElementById("videoFeed").style.display = "block";
         const btn = document.getElementById("streamToggleBtn");
@@ -325,32 +322,36 @@
         if(document.visibilityState === 'hidden') window.turnOffFlash();
     });
 
-    // --- FIX: Camera command logic with Hard Reset for Resolution ---
+    // --- CLOUD SYNC & STREAM RESTART LOGIC ---
     window.sendCamCmd = async function(variable, value, forceHardReload = false) {
         let streamWasOn = isStreamRunning;
         
+        // 1. Pause Stream safely
         if(streamWasOn) stopStream();
 
+        // 2. Send Command to ESP32
         if(activeCameraIp) {
             try {
                 await fetch(`${activeCameraIp}/action?var=${variable}&val=${value}`);
             } catch(e) { console.error("Camera cmd failed", e); }
         }
 
+        // 3. Save Setting to Firebase Memory
         let updates = {};
         updates[`cam_${variable}`] = value;
         update(settingsRef, updates);
 
+        // 4. Resume Stream smoothly
         if(streamWasOn) {
-            // Resolution changes require a slightly longer delay for the ESP32 to clear memory
             if(forceHardReload) {
-                setTimeout(startStream, 800);
+                setTimeout(startStream, 800); // More time needed for resolution buffer allocation
             } else {
                 setTimeout(startStream, 200);
             }
         }
     };
 
+    // Auto-load memory from Firebase when page opens
     async function syncCameraSettingsFromCloud(data) {
         if(cameraSettingsInitialized) return;
         cameraSettingsInitialized = true;
@@ -448,17 +449,20 @@
     };
 
     onValue(settingsRef, (snapshot) => {
+        // HIDE LOADING SCREEN IMMEDIATELY
+        document.getElementById("loading").style.display = "none";
+        document.getElementById("dashboard").style.display = "flex";
+
         const data = snapshot.val();
         if (data) {
-            
             if (data.camera_ip && data.camera_ip !== activeCameraIp) {
                 activeCameraIp = data.camera_ip;
                 document.getElementById("camStatus").style.display = "none";
                 document.getElementById("streamToggleBtn").style.display = "block";
-                
                 syncCameraSettingsFromCloud(data);
             }
 
+            // Sync Visual Settings from memory
             if(data.cam_brightness !== undefined) document.getElementById("camBright").value = data.cam_brightness;
             if(data.cam_contrast !== undefined) document.getElementById("camContrast").value = data.cam_contrast;
             if(data.cam_saturation !== undefined) document.getElementById("camSat").value = data.cam_saturation;
@@ -467,15 +471,16 @@
             if(data.cam_vflip !== undefined) document.getElementById("camVflip").checked = (data.cam_vflip == 1);
             if(data.cam_hmirror !== undefined) document.getElementById("camHmirror").checked = (data.cam_hmirror == 1);
             
+            // Restored the Text Assignment Logic so data isn't blank!
             document.getElementById("dispTemp").textContent = data.liveTemp !== undefined ? `${data.liveTemp}°F` : "-- °F";
             document.getElementById("dispHum").textContent = data.liveHum !== undefined ? `${data.liveHum}%` : "-- %";
             document.getElementById("dispSoil").textContent = data.liveSoil !== undefined ? `${data.liveSoil}%` : "-- %";
             document.getElementById("dispLux").textContent = data.liveLux !== undefined ? `${data.liveLux} lux` : "-- lux";
 
-            document.getElementById("dispTemp").nextElementSibling.textContent = `Target: ${data.tempLow}° - ${data.tempHigh}°`;
-            document.getElementById("dispHum").nextElementSibling.textContent = `Target: ${data.humLow}% - ${data.humHigh}%`;
-            document.getElementById("dispSoil").nextElementSibling.textContent = `Target: ${data.soilLow}% - ${data.soilHigh}%`;
-            document.getElementById("dispLux").nextElementSibling.textContent = `Limit: ${data.luxThreshold} lux`;
+            document.getElementById("dispTemp").nextElementSibling.textContent = `Target: ${data.tempLow || '--'}° - ${data.tempHigh || '--'}°`;
+            document.getElementById("dispHum").nextElementSibling.textContent = `Target: ${data.humLow || '--'}% - ${data.humHigh || '--'}%`;
+            document.getElementById("dispSoil").nextElementSibling.textContent = `Target: ${data.soilLow || '--'}% - ${data.soilHigh || '--'}%`;
+            document.getElementById("dispLux").nextElementSibling.textContent = `Limit: ${data.luxThreshold || '--'} lux`;
 
             document.getElementById("dispBright").textContent = `${data.globalBrightness || 10}/10`;
             let onTime = window.formatFullTime(data.timeOnHour, data.timeOnMin);
@@ -485,9 +490,6 @@
             const tState = document.getElementById("dispTimerState");
             tState.textContent = data.timerEnabled ? "Timer Active" : "Timer Disabled";
             tState.style.color = data.timerEnabled ? "#2cff8a" : "var(--muted)";
-            
-            document.getElementById("loading").style.display = "none";
-            document.getElementById("dashboard").style.display = "flex";
         }
     });
 </script>
