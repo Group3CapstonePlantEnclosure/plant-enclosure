@@ -17,14 +17,37 @@
         .dot { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255, 184, 79, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(255, 184, 79, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 184, 79, 0); } }
 
-        /* NEW LAYOUT: SIDEBAR RESPONSIVE GRID */
-        .layout-wrapper { display: flex; flex-wrap: wrap; gap: 20px; width: 100%; max-width: 1000px; margin-top: 10px; align-items: flex-start;}
-        .main-col { flex: 1 1 500px; min-width: 300px; display: flex; flex-direction: column; gap: 16px; }
-        .side-col { flex: 0 0 320px; min-width: 300px; width: 100%; display: flex; flex-direction: column; gap: 16px;}
+        .layout-wrapper { display: flex; flex-wrap: wrap; justify-content: center; width: 100%; max-width: 1000px; margin-top: 10px; transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);}
+        .main-col { flex: 1 1 100%; max-width: 600px; display: flex; flex-direction: column; gap: 16px; transition: 0.4s ease; }
+        
+        .side-col { 
+            max-width: 0; 
+            max-height: 0;
+            opacity: 0; 
+            overflow: hidden; 
+            transition: max-width 0.4s cubic-bezier(0.25, 1, 0.5, 1), max-height 0.4s ease, opacity 0.3s ease, margin 0.4s ease; 
+            margin-left: 0;
+        }
+        .side-col.open { 
+            max-width: 340px; 
+            max-height: 1200px;
+            opacity: 1; 
+            margin-left: 20px; 
+        }
+        .side-inner { width: 320px; }
+
+        @media (max-width: 960px) {
+            .side-col.open { 
+                max-width: 600px; 
+                width: 100%;
+                margin-left: 0; 
+                margin-top: 20px; 
+            }
+            .side-inner { width: 100%; max-width: 600px; margin: 0 auto;}
+        }
 
         .data-card { background: var(--card); border: 1px solid var(--stroke); border-radius: var(--radius); padding: 20px; text-align: center; backdrop-filter: blur(10px); position: relative; overflow: hidden; }
         
-        /* Stats Grid */
         .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; width: 100%;}
         @media (max-width: 400px) { .stats-grid { grid-template-columns: 1fr; } }
         .data-icon { font-size: 24px; margin-bottom: 8px; }
@@ -35,15 +58,21 @@
         #videoFeed { width: 100%; border-radius: 12px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.1); display: none; background: #000; min-height: 200px; object-fit: contain;}
         #camStatus { color: var(--muted); font-size: 14px; margin-top: 10px; }
         
+        #gearBtn { background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; transition: transform 0.4s ease, color 0.2s ease; padding: 0; line-height: 1; outline: none; display: flex; align-items: center;}
+        #gearBtn:hover { color: white; }
+        #gearBtn.active { transform: rotate(90deg); color: var(--accent); }
+
         .dual-slider { position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 15px; margin-bottom: 10px; }
         .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; left: 0; background: var(--accent); }
         .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; pointer-events: none; top: -6px; z-index: 2; margin: 0; left: 0; box-sizing: border-box; }
         .dual-slider input[type="range"]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 20px; height: 20px; background: #111; border: 2px solid var(--accent); border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
 
-        /* Sidebar Control Styles */
         .ctrl-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         .ctrl-label { font-size: 13px; color: var(--muted); }
-        .cam-select { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 6px 10px; border-radius: 8px; outline: none; font-size: 13px;}
+        
+        /* FIX: Dropdowns are now dark grey with white text so they are readable without hover */
+        .cam-select { background: #222; color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 10px; border-radius: 8px; outline: none; font-size: 13px; cursor: pointer;}
+        .cam-select option { background: #222; color: white; }
         
         .switch { position: relative; display: inline-block; width: 40px; height: 22px; }
         .switch input { opacity: 0; width: 0; height: 0; }
@@ -54,8 +83,8 @@
 
         .btn { appearance: none; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.08); color: white; padding: 14px; border-radius: 12px; font-weight: 600; text-decoration: none; text-align: center; transition: 0.2s; cursor: pointer; width: 100%;}
         .btn:hover { background: rgba(255,255,255,0.15); }
-        
         .btn-half { flex: 1; padding: 10px; font-size: 13px; }
+        
         #loading { width: 100%; text-align: center; color: var(--accent); margin-top: 50px; }
     </style>
 </head>
@@ -73,16 +102,18 @@
         
         <div class="main-col">
             <div class="data-card" style="padding: 15px;">
-                <div class="data-label" style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>🔴 Live Feed</span>
-                    <span id="flashValText" style="color: var(--accent);">Flash: 0%</span>
-                </div>
+                <div class="data-label" style="text-align: left; margin-bottom: 10px;">🔴 Live Feed</div>
                 
                 <div id="camStatus">Loading Camera IP from Firebase...</div>
                 
                 <button id="streamToggleBtn" class="btn" style="margin-bottom: 10px; display: none; color: var(--accent); border-color: rgba(255, 184, 79, 0.4);">▶ Start Live Stream</button>
                 <img id="videoFeed" src="" alt="Camera Stream (Paused)">
                 
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; padding: 0 5px;">
+                    <button id="gearBtn" title="Toggle Camera Settings">⚙️</button>
+                    <span id="flashValText" style="color: var(--accent); font-size: 13px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">FLASH: 0%</span>
+                </div>
+
                 <div class="dual-slider">
                     <div class="slider-track" id="streamFlashTrack" style="width: 0%;"></div>
                     <input type="range" id="streamFlashSlider" min="0" max="100" value="0" step="1" oninput="updateStreamFlash()" onchange="finalizeStreamFlash()">
@@ -138,53 +169,59 @@
             </div>
         </div>
 
-        <div class="side-col">
-            <div class="data-card" style="text-align: left;">
-                <div class="data-label" style="margin-bottom: 20px; font-size: 14px; color: white;">⚙️ Camera Settings</div>
-                
-                <div style="display: flex; gap: 10px; margin-bottom: 25px;">
-                    <button class="btn btn-half" id="focusBtn" style="border-color: rgba(255,255,255,0.3);">🔍 Autofocus</button>
-                    <button class="btn btn-half" id="nightBtn" style="border-color: rgba(255,255,255,0.3);">🌙 Night Mode</button>
-                </div>
+        <div class="side-col" id="settingsSidebar">
+            <div class="side-inner">
+                <div class="data-card" style="text-align: left;">
+                    <div class="data-label" style="margin-bottom: 20px; font-size: 14px; color: white;">⚙️ Camera Settings</div>
+                    
+                    <div style="display: flex; gap: 10px; margin-bottom: 25px;">
+                        <button class="btn btn-half" id="focusBtn" style="border-color: rgba(255,255,255,0.3);">🔍 Autofocus</button>
+                        <button class="btn btn-half" id="nightBtn" style="border-color: rgba(255,255,255,0.3);">🌙 Night Mode</button>
+                    </div>
 
-                <div class="ctrl-row">
-                    <span class="ctrl-label">Brightness</span>
-                    <input type="range" id="camBright" min="-2" max="2" value="0" style="width: 120px;" onchange="sendCamCmd('brightness', this.value)">
-                </div>
-                <div class="ctrl-row">
-                    <span class="ctrl-label">Contrast</span>
-                    <input type="range" id="camContrast" min="-2" max="2" value="0" style="width: 120px;" onchange="sendCamCmd('contrast', this.value)">
-                </div>
-                <div class="ctrl-row">
-                    <span class="ctrl-label">Saturation</span>
-                    <input type="range" id="camSat" min="-2" max="2" value="0" style="width: 120px;" onchange="sendCamCmd('saturation', this.value)">
-                </div>
+                    <div class="ctrl-row">
+                        <span class="ctrl-label">Brightness</span>
+                        <input type="range" id="camBright" min="-2" max="2" value="0" style="width: 120px;" onchange="sendCamCmd('brightness', this.value)">
+                    </div>
+                    <div class="ctrl-row">
+                        <span class="ctrl-label">Contrast</span>
+                        <input type="range" id="camContrast" min="-2" max="2" value="0" style="width: 120px;" onchange="sendCamCmd('contrast', this.value)">
+                    </div>
+                    <div class="ctrl-row">
+                        <span class="ctrl-label">Saturation</span>
+                        <input type="range" id="camSat" min="-2" max="2" value="0" style="width: 120px;" onchange="sendCamCmd('saturation', this.value)">
+                    </div>
 
-                <div class="ctrl-row" style="margin-top: 25px;">
-                    <span class="ctrl-label">Resolution</span>
-                    <select class="cam-select" onchange="sendCamCmd('framesize', this.value)">
-                        <option value="6">VGA (640x480)</option>
-                        <option value="7">SVGA (800x600)</option>
-                        <option value="8">XGA (1024x768)</option>
-                    </select>
-                </div>
-                <div class="ctrl-row">
-                    <span class="ctrl-label">Color Filter</span>
-                    <select class="cam-select" id="camEffect" onchange="sendCamCmd('special_effect', this.value)">
-                        <option value="0">Normal</option>
-                        <option value="2">Grayscale</option>
-                        <option value="4">Green Tint</option>
-                        <option value="6">Sepia</option>
-                    </select>
-                </div>
+                    <div class="ctrl-row" style="margin-top: 25px;">
+                        <span class="ctrl-label">Resolution</span>
+                        <select class="cam-select" id="camFramesize" onchange="sendCamCmd('framesize', this.value, true)">
+                            <option value="10">UXGA (1600x1200)</option>
+                            <option value="9">SXGA (1280x1024)</option>
+                            <option value="8">XGA (1024x768)</option>
+                            <option value="7">SVGA (800x600)</option>
+                            <option value="6">VGA (640x480)</option>
+                            <option value="5">CIF (400x296)</option>
+                            <option value="4" selected>QVGA (320x240)</option>
+                        </select>
+                    </div>
+                    <div class="ctrl-row">
+                        <span class="ctrl-label">Color Filter</span>
+                        <select class="cam-select" id="camEffect" onchange="sendCamCmd('special_effect', this.value)">
+                            <option value="0">Normal</option>
+                            <option value="2">Grayscale</option>
+                            <option value="4">Green Tint</option>
+                            <option value="6">Sepia</option>
+                        </select>
+                    </div>
 
-                <div class="ctrl-row" style="margin-top: 20px;">
-                    <span class="ctrl-label">Vertical Flip</span>
-                    <label class="switch"><input type="checkbox" onchange="sendCamCmd('vflip', this.checked ? 1 : 0)"><span class="slider-tog"></span></label>
-                </div>
-                <div class="ctrl-row">
-                    <span class="ctrl-label">Mirror Image</span>
-                    <label class="switch"><input type="checkbox" onchange="sendCamCmd('hmirror', this.checked ? 1 : 0)"><span class="slider-tog"></span></label>
+                    <div class="ctrl-row" style="margin-top: 20px;">
+                        <span class="ctrl-label">Vertical Flip</span>
+                        <label class="switch"><input type="checkbox" id="camVflip" onchange="sendCamCmd('vflip', this.checked ? 1 : 0)"><span class="slider-tog"></span></label>
+                    </div>
+                    <div class="ctrl-row">
+                        <span class="ctrl-label">Mirror Image</span>
+                        <label class="switch"><input type="checkbox" id="camHmirror" onchange="sendCamCmd('hmirror', this.checked ? 1 : 0)"><span class="slider-tog"></span></label>
+                    </div>
                 </div>
             </div>
         </div>
@@ -199,6 +236,7 @@
     let isStreamRunning = false;
     let wasStreamRunning = false;
     let nightModeActive = false;
+    let cameraSettingsInitialized = false; 
     const PLANTNET_KEY = "2b1020AMM4X5X1BCCGDgAKF9O"; 
 
     window.formatFullTime = function(hour, minute) {
@@ -208,10 +246,16 @@
         return `${h}:${m} ${ampm}`;
     }
 
-    // --- STREAM TOGGLE LOGIC ---
+    document.getElementById("gearBtn").onclick = function() {
+        this.classList.toggle("active");
+        document.getElementById("settingsSidebar").classList.toggle("open");
+    };
+
     function startStream() {
         if(!activeCameraIp) return;
-        document.getElementById("videoFeed").src = `${activeCameraIp}/stream`;
+        // Adding a cache-busting timestamp forces the browser to reconnect to the feed completely
+        // This is crucial for resolution changes so the browser doesn't try to show an old frame size
+        document.getElementById("videoFeed").src = `${activeCameraIp}/stream?t=${new Date().getTime()}`;
         document.getElementById("videoFeed").style.display = "block";
         const btn = document.getElementById("streamToggleBtn");
         btn.textContent = "⏹ Stop Live Stream";
@@ -235,7 +279,6 @@
         else startStream();
     };
 
-    // --- FLASH LOGIC (WITH AUTO-PAUSE) ---
     const flashSlider = document.getElementById('streamFlashSlider');
     
     function pauseForSlider() {
@@ -249,7 +292,7 @@
     window.updateStreamFlash = function() {
         const val = flashSlider.value;
         document.getElementById('streamFlashTrack').style.width = val + '%';
-        document.getElementById('flashValText').textContent = `Flash: ${val}%`;
+        document.getElementById('flashValText').textContent = `FLASH: ${val}%`;
         
         if (activeCameraIp && !flashTimeout) {
             flashTimeout = setTimeout(() => {
@@ -282,48 +325,85 @@
         if(document.visibilityState === 'hidden') window.turnOffFlash();
     });
 
-    // --- CAMERA SETTINGS LOGIC ---
-    window.sendCamCmd = function(variable, value) {
+    // --- FIX: Camera command logic with Hard Reset for Resolution ---
+    window.sendCamCmd = async function(variable, value, forceHardReload = false) {
+        let streamWasOn = isStreamRunning;
+        
+        if(streamWasOn) stopStream();
+
         if(activeCameraIp) {
-            fetch(`${activeCameraIp}/action?var=${variable}&val=${value}`).catch(()=>{});
+            try {
+                await fetch(`${activeCameraIp}/action?var=${variable}&val=${value}`);
+            } catch(e) { console.error("Camera cmd failed", e); }
+        }
+
+        let updates = {};
+        updates[`cam_${variable}`] = value;
+        update(settingsRef, updates);
+
+        if(streamWasOn) {
+            // Resolution changes require a slightly longer delay for the ESP32 to clear memory
+            if(forceHardReload) {
+                setTimeout(startStream, 800);
+            } else {
+                setTimeout(startStream, 200);
+            }
         }
     };
 
-    // Autofocus Button
+    async function syncCameraSettingsFromCloud(data) {
+        if(cameraSettingsInitialized) return;
+        cameraSettingsInitialized = true;
+        
+        let streamWasOn = isStreamRunning;
+        if(streamWasOn) stopStream();
+
+        const commands = [
+            { var: 'framesize', val: data.cam_framesize },
+            { var: 'brightness', val: data.cam_brightness },
+            { var: 'contrast', val: data.cam_contrast },
+            { var: 'saturation', val: data.cam_saturation },
+            { var: 'special_effect', val: data.cam_special_effect },
+            { var: 'vflip', val: data.cam_vflip },
+            { var: 'hmirror', val: data.cam_hmirror }
+        ];
+
+        for(let cmd of commands) {
+            if(cmd.val !== undefined && activeCameraIp) {
+                try { await fetch(`${activeCameraIp}/action?var=${cmd.var}&val=${cmd.val}`); } catch(e) {}
+            }
+        }
+        if(streamWasOn) setTimeout(startStream, 200);
+    }
+
     document.getElementById("focusBtn").onclick = () => {
         alert("The ESP32-CAM uses a fixed-focus lens. To adjust focus, you must physically twist the small black lens ring on the camera module itself. It may be glued in place from the factory!");
     };
 
-    // Night Mode Button
-    document.getElementById("nightBtn").onclick = function() {
+    document.getElementById("nightBtn").onclick = async function() {
         nightModeActive = !nightModeActive;
         this.style.backgroundColor = nightModeActive ? "rgba(255, 184, 79, 0.2)" : "rgba(255,255,255,0.08)";
         this.style.borderColor = nightModeActive ? "var(--accent)" : "rgba(255,255,255,0.3)";
         this.textContent = nightModeActive ? "🌙 Night Mode (ON)" : "🌙 Night Mode";
 
+        let streamWasOn = isStreamRunning;
+        if(streamWasOn) stopStream();
+
         if(nightModeActive) {
-            // Boost brightness, contrast, and apply green tint
-            document.getElementById("camBright").value = 2;
-            document.getElementById("camContrast").value = 1;
-            document.getElementById("camEffect").value = 4;
-            sendCamCmd('brightness', 2);
-            setTimeout(() => sendCamCmd('contrast', 1), 50);
-            setTimeout(() => sendCamCmd('special_effect', 4), 100);
+            await sendCamCmd('brightness', 2, false);
+            await sendCamCmd('contrast', 1, false);
+            await sendCamCmd('special_effect', 4, false); 
         } else {
-            // Reset to normal
-            document.getElementById("camBright").value = 0;
-            document.getElementById("camContrast").value = 0;
-            document.getElementById("camEffect").value = 0;
-            sendCamCmd('brightness', 0);
-            setTimeout(() => sendCamCmd('contrast', 0), 50);
-            setTimeout(() => sendCamCmd('special_effect', 0), 100);
+            await sendCamCmd('brightness', 0, false);
+            await sendCamCmd('contrast', 0, false);
+            await sendCamCmd('special_effect', 0, false);
         }
+
+        if(streamWasOn) setTimeout(startStream, 200);
     };
 
-
-    // --- PLANTNET SCANNER ---
     document.getElementById("scanBtn").onclick = async () => {
-        if(!activeCameraIp) return alert("Camera IP not found.");
+        if(!activeCameraIp) return alert("Camera IP not found. Is the ESP32 connected to WiFi?");
 
         const status = document.getElementById("idStatus");
         const preview = document.getElementById("plantPreview");
@@ -370,17 +450,34 @@
     onValue(settingsRef, (snapshot) => {
         const data = snapshot.val();
         if (data) {
+            
             if (data.camera_ip && data.camera_ip !== activeCameraIp) {
                 activeCameraIp = data.camera_ip;
                 document.getElementById("camStatus").style.display = "none";
                 document.getElementById("streamToggleBtn").style.display = "block";
+                
+                syncCameraSettingsFromCloud(data);
             }
+
+            if(data.cam_brightness !== undefined) document.getElementById("camBright").value = data.cam_brightness;
+            if(data.cam_contrast !== undefined) document.getElementById("camContrast").value = data.cam_contrast;
+            if(data.cam_saturation !== undefined) document.getElementById("camSat").value = data.cam_saturation;
+            if(data.cam_framesize !== undefined) document.getElementById("camFramesize").value = data.cam_framesize;
+            if(data.cam_special_effect !== undefined) document.getElementById("camEffect").value = data.cam_special_effect;
+            if(data.cam_vflip !== undefined) document.getElementById("camVflip").checked = (data.cam_vflip == 1);
+            if(data.cam_hmirror !== undefined) document.getElementById("camHmirror").checked = (data.cam_hmirror == 1);
             
+            document.getElementById("dispTemp").textContent = data.liveTemp !== undefined ? `${data.liveTemp}°F` : "-- °F";
+            document.getElementById("dispHum").textContent = data.liveHum !== undefined ? `${data.liveHum}%` : "-- %";
+            document.getElementById("dispSoil").textContent = data.liveSoil !== undefined ? `${data.liveSoil}%` : "-- %";
+            document.getElementById("dispLux").textContent = data.liveLux !== undefined ? `${data.liveLux} lux` : "-- lux";
+
             document.getElementById("dispTemp").nextElementSibling.textContent = `Target: ${data.tempLow}° - ${data.tempHigh}°`;
             document.getElementById("dispHum").nextElementSibling.textContent = `Target: ${data.humLow}% - ${data.humHigh}%`;
             document.getElementById("dispSoil").nextElementSibling.textContent = `Target: ${data.soilLow}% - ${data.soilHigh}%`;
             document.getElementById("dispLux").nextElementSibling.textContent = `Limit: ${data.luxThreshold} lux`;
 
+            document.getElementById("dispBright").textContent = `${data.globalBrightness || 10}/10`;
             let onTime = window.formatFullTime(data.timeOnHour, data.timeOnMin);
             let offTime = window.formatFullTime(data.timeOffHour, data.timeOffMin);
             document.getElementById("dispTime").textContent = `${onTime} to ${offTime}`;
