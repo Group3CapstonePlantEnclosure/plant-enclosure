@@ -74,6 +74,42 @@ static esp_err_t flash_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
+// --- NEW: Camera Action Handler for Filters & Settings ---
+static esp_err_t cmd_handler(httpd_req_t *req) {
+    char buf[64];
+    char variable[32];
+    char value[32];
+
+    if (httpd_req_get_url_query_str(req, buf, sizeof(buf)) == ESP_OK) {
+        if (httpd_query_key_value(buf, "var", variable, sizeof(variable)) == ESP_OK &&
+            httpd_query_key_value(buf, "val", value, sizeof(value)) == ESP_OK) {
+            
+            int val = atoi(value);
+            sensor_t * s = esp_camera_sensor_get();
+            int res = 0;
+
+            if(!strcmp(variable, "framesize")) {
+                if(s->pixformat == PIXFORMAT_JPEG) res = s->set_framesize(s, (framesize_t)val);
+            }
+            else if(!strcmp(variable, "contrast")) res = s->set_contrast(s, val);
+            else if(!strcmp(variable, "brightness")) res = s->set_brightness(s, val);
+            else if(!strcmp(variable, "saturation")) res = s->set_saturation(s, val);
+            else if(!strcmp(variable, "hmirror")) res = s->set_hmirror(s, val);
+            else if(!strcmp(variable, "vflip")) res = s->set_vflip(s, val);
+            else if(!strcmp(variable, "special_effect")) res = s->set_special_effect(s, val);
+            else res = -1;
+
+            if(res) {
+                return httpd_resp_send_500(req);
+            }
+            
+            httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+            return httpd_resp_send(req, NULL, 0);
+        }
+    }
+    return httpd_resp_send_404(req);
+}
+
 #define PART_BOUNDARY "123456789000000000000987654321"
 static const char* _STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
 static const char* _STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
@@ -111,11 +147,13 @@ void startServer() {
     httpd_uri_t capture_uri = { .uri = "/capture", .method = HTTP_GET, .handler = capture_handler, .user_ctx = NULL };
     httpd_uri_t stream_uri  = { .uri = "/stream",  .method = HTTP_GET, .handler = stream_handler,  .user_ctx = NULL };
     httpd_uri_t flash_uri   = { .uri = "/flash",   .method = HTTP_GET, .handler = flash_handler,   .user_ctx = NULL };
+    httpd_uri_t cmd_uri     = { .uri = "/action",  .method = HTTP_GET, .handler = cmd_handler,     .user_ctx = NULL }; // NEW ENDPOINT
 
     if (httpd_start(&plant_httpd, &config) == ESP_OK) {
         httpd_register_uri_handler(plant_httpd, &capture_uri);
         httpd_register_uri_handler(plant_httpd, &stream_uri);
         httpd_register_uri_handler(plant_httpd, &flash_uri);
+        httpd_register_uri_handler(plant_httpd, &cmd_uri); // REGISTER NEW ENDPOINT
     }
 }
 
@@ -202,7 +240,7 @@ void setup() {
   }
 
   // 6. CONNECT WIFI (The heaviest power draw)
-WiFi.mode(WIFI_STA);
+  WiFi.mode(WIFI_STA);
   vTaskDelay(10); 
   WiFi.setTxPower(WIFI_POWER_7dBm); // Set to a lower power level
 
