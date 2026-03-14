@@ -18,12 +18,22 @@
 
         .dashboard { width: 100%; max-width: 600px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px;}
         @media (max-width: 400px) { .dashboard { grid-template-columns: 1fr; } }
-        .data-card { background: var(--card); border: 1px solid var(--stroke); border-radius: var(--radius); padding: 20px; text-align: center; backdrop-filter: blur(10px); transition: 0.3s; }
+        .data-card { background: var(--card); border: 1px solid var(--stroke); border-radius: var(--radius); padding: 20px; text-align: center; backdrop-filter: blur(10px); transition: 0.3s; position: relative; overflow: hidden; }
         .data-card.full { grid-column: 1 / -1; }
         .data-icon { font-size: 24px; margin-bottom: 8px; }
         .data-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
         .data-value { font-size: 24px; font-weight: 700; color: var(--text); }
         .data-sub { font-size: 12px; color: var(--accent); margin-top: 4px; }
+
+        /* Video Feed Styles */
+        #videoFeed { width: 100%; border-radius: 12px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.1); display: none; background: #000; min-height: 200px; object-fit: contain;}
+        #camStatus { color: var(--muted); font-size: 14px; margin-top: 10px; }
+        
+        /* Stream Slider */
+        .dual-slider { position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 15px; margin-bottom: 10px; }
+        .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; background: var(--accent); }
+        .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; top: -6px; z-index: 2; margin: 0; }
+        .dual-slider input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; background: #111; border: 2px solid var(--accent); border-radius: 50%; cursor: pointer; }
 
         .actions { width: 100%; max-width: 600px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 30px; }
         .btn { appearance: none; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.08); color: white; padding: 16px; border-radius: 14px; font-weight: 600; text-decoration: none; text-align: center; transition: 0.2s; }
@@ -42,6 +52,22 @@
     <div id="loading">Connecting to Cloud Database...</div>
 
     <div class="dashboard" id="dashboard" style="display: none;">
+        
+        <div class="data-card full" style="padding: 15px;">
+            <div class="data-label" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>🔴 Live Feed</span>
+                <span id="flashValText" style="color: var(--accent);">Flash: 0%</span>
+            </div>
+            
+            <div id="camStatus">Loading Camera IP from Firebase...</div>
+            <img id="videoFeed" src="" alt="Camera Stream Loading...">
+            
+            <div class="dual-slider">
+                <div class="slider-track" id="streamFlashTrack" style="width: 0%;"></div>
+                <input type="range" id="streamFlashSlider" min="0" max="100" value="0" step="1">
+            </div>
+        </div>
+
         <div class="data-card">
             <div class="data-icon">🌡️</div>
             <div class="data-label">Target Temp</div>
@@ -90,19 +116,41 @@
     import { db, ref, onValue } from './firebase-config.js';
 
     const settingsRef = ref(db, 'settings');
+    let activeCameraIp = null;
+    let streamActive = false;
 
-    // Helper to format the time correctly with the actual minutes
     window.formatFullTime = function(hour, minute) {
         let h = hour % 12 || 12;
-        // Ensure minute exists and is padded (e.g., 08 instead of 8)
         let m = minute !== undefined ? minute.toString().padStart(2, '0') : "00";
         let ampm = hour < 12 ? 'AM' : 'PM';
         return `${h}:${m} ${ampm}`;
     }
 
+    // Flash Slider Logic for Live Stream
+    const flashSlider = document.getElementById('streamFlashSlider');
+    flashSlider.addEventListener('input', (e) => {
+        const val = e.target.value;
+        document.getElementById('streamFlashTrack').style.width = val + '%';
+        document.getElementById('flashValText').textContent = `Flash: ${val}%`;
+        
+        if (activeCameraIp) {
+            let pwmValue = Math.round((val / 100) * 255);
+            fetch(`${activeCameraIp}/flash?v=${pwmValue}`).catch(() => {});
+        }
+    });
+
     onValue(settingsRef, (snapshot) => {
         const data = snapshot.val();
-        if (data && data.tempLow !== undefined) {
+        if (data) {
+            
+            // --- CONNECT CAMERA DYNAMICALLY ---
+            if (data.camera_ip && data.camera_ip !== activeCameraIp) {
+                activeCameraIp = data.camera_ip;
+                document.getElementById("camStatus").style.display = "none";
+                const videoFeed = document.getElementById("videoFeed");
+                videoFeed.src = `${activeCameraIp}/stream`;
+                videoFeed.style.display = "block";
+            }
             
             // --- Current Readings ---
             document.getElementById("dispTemp").textContent = data.liveTemp !== undefined ? `${data.liveTemp}°F` : "-- °F";
@@ -118,8 +166,6 @@
 
             // --- System Settings ---
             document.getElementById("dispBright").textContent = `${data.globalBrightness || 10}/10`;
-            
-            // FIX: Pulling the actual minute variables we saved (timeOnMin / timeOffMin)
             let onTime = window.formatFullTime(data.timeOnHour, data.timeOnMin);
             let offTime = window.formatFullTime(data.timeOffHour, data.timeOffMin);
             document.getElementById("dispTime").textContent = `${onTime} to ${offTime}`;

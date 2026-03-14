@@ -6,7 +6,7 @@
     <title>Manual Control</title>
     <style>
         :root { --bg: #0b0f0c; --text: rgba(255,255,255,0.92); --muted: rgba(255,255,255,0.6); --radius: 20px; 
-                --c-temp: #ff6b6b; --c-water: #4fc3f7; --c-light: #ffeb3b; --c-sys: #ba68c8; --c-term: #00ff41; }
+                --c-temp: #ff6b6b; --c-water: #4fc3f7; --c-light: #ffeb3b; --c-sys: #ba68c8; --c-term: #00ff41; --c-cam: #ffb84f;}
         body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; padding: 30px 20px 80px 20px; display: flex; flex-direction: column; align-items: center; }
         
         .header { max-width: 600px; width: 100%; margin: 0 auto 30px auto; text-align: center; position: relative; }
@@ -22,6 +22,7 @@
         .card.card-light::before { background: var(--c-light); box-shadow: 0 0 15px var(--c-light); }
         .card.card-sys::before { background: var(--c-sys); box-shadow: 0 0 15px var(--c-sys); }
         .card.card-term::before { background: var(--c-term); box-shadow: 0 0 15px var(--c-term); }
+        .card.card-cam::before { background: var(--c-cam); box-shadow: 0 0 15px var(--c-cam); }
 
         .group-title { font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 24px; font-weight: 700; color: #fff; opacity: 0.8;}
         
@@ -42,6 +43,8 @@
         .card-light .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-light); }
         .card-sys .slider-track { background: var(--c-sys); }
         .card-sys .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-sys); }
+        .card-cam .slider-track { background: var(--c-cam); }
+        .card-cam .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-cam); }
 
         .toggle-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
@@ -52,11 +55,8 @@
         input:checked + .slider-tog:before { transform: translateX(22px); background-color: #000; }
 
         .time-group { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-        
-        /* New Time Label Styles */
         .input-wrapper { position: relative; display: flex; flex-direction: column; align-items: center; }
         .input-label { font-size: 10px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; letter-spacing: 0.5px; }
-        
         .time-input-num { width: 55px; text-align: center; font-size: 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 10px; border-radius: 10px; outline: none; }
         .time-sep { font-weight: bold; font-size: 18px; color: var(--muted); }
         .ampm-btn.active { background: var(--c-light) !important; color: #000 !important; border-color: var(--c-light) !important; }
@@ -80,6 +80,29 @@
     </div>
 
     <div class="form-container">
+        
+        <div class="card card-cam">
+            <div class="group-title">🌿 Plant AI Scanner</div>
+            
+            <div class="slider-container" style="margin-bottom: 20px;">
+                <div class="slider-labels"><span>Flash Brightness</span> <span class="val" id="flashVal">0%</span></div>
+                <div class="dual-slider">
+                    <div class="slider-track" id="flashTrack" style="width: 0%; left: 0%;"></div>
+                    <input type="range" id="flashSlider" min="0" max="100" value="0" step="1" oninput="updateSingles()">
+                </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 15px; width: 100%;">
+                <img id="plantPreview" src="" style="width: 100%; border-radius: 12px; display: none; border: 1px solid rgba(255,255,255,0.1);">
+                <div id="idStatus" style="font-size: 14px; color: var(--muted); text-align: center;">Ready to scan...</div>
+                
+                <div class="btn-row" style="width: 100%;">
+                    <button class="btn-term" id="scanBtn" style="color: var(--c-cam); border-color: var(--c-cam);">CAPTURE & IDENTIFY</button>
+                    <a href="monitor.html" class="btn-term" style="text-align: center; text-decoration: none;">Live Video Monitor 📺</a>
+                </div>
+            </div>
+        </div>
+
         <div class="card card-temp">
             <div class="group-title">🌡️ Climate Range</div>
             <div class="slider-container">
@@ -210,11 +233,84 @@
         import { db, ref, get, update, onValue } from './firebase-config.js';
 
         let periods = { on: 'AM', off: 'PM' };
+        let activeCameraIp = ""; // Populated from Firebase
         const settingsRef = ref(db, 'settings');
+        
+        // ADD YOUR PLANTNET KEY HERE
+        const PLANTNET_KEY = "2b1020AMM4X5X1BCCGDgAKF9O"; 
 
-        window.padInput = function(el) {
-            if (el.value !== "") el.value = el.value.padStart(2, '0');
+        // --- Camera & Flash Logic ---
+        window.updateSingles = function() {
+            // Flash Slider Logic
+            const flash = document.getElementById("flashSlider").value;
+            document.getElementById("flashVal").textContent = flash + "%";
+            document.getElementById("flashTrack").style.width = flash + "%";
+            
+            // Send flash brightness to ESP32 instantly if we have the IP
+            if(activeCameraIp) {
+                let pwmValue = Math.round((flash / 100) * 255);
+                fetch(`${activeCameraIp}/flash?v=${pwmValue}`).catch(() => {});
+            }
+
+            // Existing Singles Logic
+            document.getElementById("luxVal").textContent = document.getElementById("luxThreshold").value + " lux";
+            document.getElementById("brightVal").textContent = document.getElementById("globalBrightness").value + " / 10";
+            let tz = parseInt(document.getElementById("timeZoneOffset").value);
+            document.getElementById("tzVal").textContent = "UTC " + (tz >= 0 ? "+" : "") + tz;
         }
+
+        document.getElementById("scanBtn").onclick = async () => {
+            if(!activeCameraIp) {
+                alert("Camera IP not found. Is the ESP32 connected to WiFi?");
+                return;
+            }
+
+            const status = document.getElementById("idStatus");
+            const preview = document.getElementById("plantPreview");
+            const btn = document.getElementById("scanBtn");
+
+            btn.disabled = true;
+            status.textContent = "📸 Snapping photo...";
+
+            try {
+                // 1. Fetch image from the dynamic IP
+                const response = await fetch(`${activeCameraIp}/capture`);
+                if (!response.ok) throw new Error("Camera not responding.");
+                
+                const blob = await response.blob();
+                preview.src = URL.createObjectURL(blob);
+                preview.style.display = "block";
+
+                // 2. Send to PlantNet API
+                status.textContent = "🧠 Identifying species...";
+                const formData = new FormData();
+                formData.append('images', blob);
+                formData.append('organs', 'leaf');
+
+                const idRes = await fetch(`https://my-api.plantnet.org/v2/identify/all?api-key=${PLANTNET_KEY}`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await idRes.json();
+                if(!result.results) throw new Error("Plant not recognized. Try adjusting flash/lighting!");
+                
+                const bestMatch = result.results[0];
+                const plantName = bestMatch.species.commonNames[0] || bestMatch.species.scientificName;
+
+                status.innerHTML = `✅ Found: <b>${plantName}</b><br>(${(bestMatch.score * 100).toFixed(1)}% accuracy)`;
+
+                await update(settingsRef, { identified_plant: plantName });
+
+            } catch (e) {
+                status.textContent = "❌ Error: " + e.message;
+            } finally {
+                btn.disabled = false;
+            }
+        };
+
+        // --- Existing UI Logic ---
+        window.padInput = function(el) { if (el.value !== "") el.value = el.value.padStart(2, '0'); }
 
         window.setPeriod = function(type, p) {
             periods[type] = p;
@@ -229,7 +325,6 @@
             label.textContent = adv.style.display === "none" ? "▼ Advanced Settings" : "▲ Close Advanced Settings";
         }
 
-        // Logic for converting 12h UI to 24h Integer
         function get24H(hId, period) {
             let h = parseInt(document.getElementById(hId).value) || 12;
             if (period === 'PM' && h < 12) h += 12;
@@ -251,16 +346,12 @@
             label.textContent = `${minV}${suffix} - ${maxV}${suffix}`;
         }
 
-        window.updateSingles = function() {
-            document.getElementById("luxVal").textContent = document.getElementById("luxThreshold").value + " lux";
-            document.getElementById("brightVal").textContent = document.getElementById("globalBrightness").value + " / 10";
-            let tz = parseInt(document.getElementById("timeZoneOffset").value);
-            document.getElementById("tzVal").textContent = "UTC " + (tz >= 0 ? "+" : "") + tz;
-        }
-
+        // Firebase Sync
         get(settingsRef).then((snapshot) => {
             const d = snapshot.val();
             if (d) {
+                if(d.camera_ip) activeCameraIp = d.camera_ip; // Save dynamic IP
+                
                 document.getElementById("tempLow").value = d.tempLow || 40;
                 document.getElementById("tempHigh").value = d.tempHigh || 100;
                 document.getElementById("humLow").value = d.humLow || 0;
@@ -272,7 +363,6 @@
                 document.getElementById("globalBrightness").value = d.globalBrightness || 10;
                 document.getElementById("timeZoneOffset").value = d.timeZoneOffset || -5;
                 
-                // Loading separate Hour and Minute integers
                 let onH24 = d.timeOnHour !== undefined ? d.timeOnHour : 8;
                 let onM = d.timeOnMin !== undefined ? d.timeOnMin : 0;
                 document.getElementById("onH").value = onH24 % 12 || 12;
@@ -299,7 +389,6 @@
                 humHigh: parseFloat(document.getElementById("humHigh").value),
                 soilLow: parseInt(document.getElementById("soilLow").value),
                 soilHigh: parseInt(document.getElementById("soilHigh").value),
-                // Saving separate Hour/Minute integers for clean formatting on other menus
                 timeOnHour: get24H("onH", periods.on),
                 timeOnMin: parseInt(document.getElementById("onM").value) || 0,
                 timeOffHour: get24H("offH", periods.off),
@@ -317,11 +406,15 @@
             } catch (e) { document.getElementById("statusMsg").textContent = "❌ Error: " + e.message; btn.disabled = false; }
         });
 
+        // Realtime logs and IP updates
         onValue(settingsRef, (s) => {
             const d = s.val();
-            if(d && d.system_logs) {
-                const lb = document.getElementById("serialLog");
-                lb.value = d.system_logs; lb.scrollTop = lb.scrollHeight;
+            if(d) {
+                if(d.camera_ip) activeCameraIp = d.camera_ip; // Keep IP updated instantly
+                if(d.system_logs) {
+                    const lb = document.getElementById("serialLog");
+                    lb.value = d.system_logs; lb.scrollTop = lb.scrollHeight;
+                }
             }
         });
 
@@ -330,8 +423,6 @@
             const lb = document.getElementById("serialLog");
             lb.value += "\n\n[CLOUD] Running Sensor Test & Fetching Logs...";
             lb.scrollTop = lb.scrollHeight;
-            
-            // Fires both the sensor check and the log fetch
             await update(settingsRef, { sensor_test_cmd: true, fetch_logs_cmd: true });
         });
 
@@ -339,8 +430,6 @@
             const lb = document.getElementById("serialLog");
             lb.value += "\n\n[CLOUD] Requesting Logs...";
             lb.scrollTop = lb.scrollHeight;
-            
-            // Only fires the log fetch
             await update(settingsRef, { fetch_logs_cmd: true });
         });
 
