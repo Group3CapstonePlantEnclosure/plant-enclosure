@@ -25,14 +25,13 @@
         .data-value { font-size: 24px; font-weight: 700; color: var(--text); }
         .data-sub { font-size: 12px; color: var(--accent); margin-top: 4px; }
 
-        /* Video Feed Styles */
         #videoFeed { width: 100%; border-radius: 12px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.1); display: none; background: #000; min-height: 200px; object-fit: contain;}
         #camStatus { color: var(--muted); font-size: 14px; margin-top: 10px; }
         
-        /* Stream Slider */
+        /* FIX: Adjusted slider CSS so thumb and track map correctly to 100% width */
         .dual-slider { position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 15px; margin-bottom: 10px; }
-        .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; background: var(--accent); }
-        .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; top: -6px; z-index: 2; margin: 0; }
+        .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; background: var(--accent); left: 0; }
+        .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; top: -6px; z-index: 2; margin: 0; left: 0; box-sizing: border-box; }
         .dual-slider input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; background: #111; border: 2px solid var(--accent); border-radius: 50%; cursor: pointer; }
 
         .actions { width: 100%; max-width: 600px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 30px; }
@@ -117,7 +116,6 @@
 
     const settingsRef = ref(db, 'settings');
     let activeCameraIp = null;
-    let streamActive = false;
 
     window.formatFullTime = function(hour, minute) {
         let h = hour % 12 || 12;
@@ -126,13 +124,18 @@
         return `${h}:${m} ${ampm}`;
     }
 
-    // Flash Slider Logic for Live Stream
     const flashSlider = document.getElementById('streamFlashSlider');
+    
+    // FIX: Updates the UI immediately as you slide
     flashSlider.addEventListener('input', (e) => {
         const val = e.target.value;
         document.getElementById('streamFlashTrack').style.width = val + '%';
         document.getElementById('flashValText').textContent = `Flash: ${val}%`;
-        
+    });
+
+    // FIX: Sends the fetch command ONLY when you let go of the slider
+    flashSlider.addEventListener('change', (e) => {
+        const val = e.target.value;
         if (activeCameraIp) {
             let pwmValue = Math.round((val / 100) * 255);
             fetch(`${activeCameraIp}/flash?v=${pwmValue}`).catch(() => {});
