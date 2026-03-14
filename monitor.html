@@ -28,7 +28,7 @@
         #videoFeed { width: 100%; border-radius: 12px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.1); display: none; background: #000; min-height: 200px; object-fit: contain;}
         #camStatus { color: var(--muted); font-size: 14px; margin-top: 10px; }
         
-        /* FIX: Adjusted slider CSS so thumb and track map correctly to 100% width */
+        /* CSS FIX: Added left: 0 and box-sizing to keep slider aligned */
         .dual-slider { position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 15px; margin-bottom: 10px; }
         .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; background: var(--accent); left: 0; }
         .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; top: -6px; z-index: 2; margin: 0; left: 0; box-sizing: border-box; }
@@ -126,16 +126,12 @@
 
     const flashSlider = document.getElementById('streamFlashSlider');
     
-    // FIX: Updates the UI immediately as you slide
+    // Restored: Updates UI and sends fetch in real-time as you slide
     flashSlider.addEventListener('input', (e) => {
         const val = e.target.value;
         document.getElementById('streamFlashTrack').style.width = val + '%';
         document.getElementById('flashValText').textContent = `Flash: ${val}%`;
-    });
-
-    // FIX: Sends the fetch command ONLY when you let go of the slider
-    flashSlider.addEventListener('change', (e) => {
-        const val = e.target.value;
+        
         if (activeCameraIp) {
             let pwmValue = Math.round((val / 100) * 255);
             fetch(`${activeCameraIp}/flash?v=${pwmValue}`).catch(() => {});

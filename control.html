@@ -31,9 +31,10 @@
         .slider-labels span.val { font-weight: bold; color: white; font-size: 16px;}
         
         .dual-slider { position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 10px; }
-        .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; left: 0;}
-        .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; top: -6px; z-index: 2; margin: 0; left: 0; }
-        .dual-slider input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; background: #111; border: 2px solid white; border-radius: 50%; cursor: pointer; }
+        /* CSS FIX: Added left: 0 and box-sizing to keep slider aligned */
+        .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; left: 0; }
+        .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; pointer-events: none; top: -6px; z-index: 2; margin: 0; left: 0; box-sizing: border-box; }
+        .dual-slider input[type="range"]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 20px; height: 20px; background: #111; border: 2px solid white; border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
         
         .card-temp .slider-track { background: var(--c-temp); }
         .card-temp .dual-slider input[type="range"]::-webkit-slider-thumb { border-color: var(--c-temp); }
@@ -87,8 +88,8 @@
             <div class="slider-container" style="margin-bottom: 20px;">
                 <div class="slider-labels"><span>Flash Brightness</span> <span class="val" id="flashVal">0%</span></div>
                 <div class="dual-slider">
-                    <div class="slider-track" id="flashTrack" style="width: 0%; left: 0%;"></div>
-                    <input type="range" id="flashSlider" min="0" max="100" value="0" step="1" oninput="updateFlashUI()" onchange="sendFlashCommand()">
+                    <div class="slider-track" id="flashTrack"></div>
+                    <input type="range" id="flashSlider" min="0" max="100" value="0" step="1" oninput="updateSingles()">
                 </div>
             </div>
 
@@ -233,29 +234,26 @@
         import { db, ref, get, update, onValue } from './firebase-config.js';
 
         let periods = { on: 'AM', off: 'PM' };
-        let activeCameraIp = ""; 
+        let activeCameraIp = ""; // Populated from Firebase
         const settingsRef = ref(db, 'settings');
         
+        // ADD YOUR PLANTNET KEY HERE
         const PLANTNET_KEY = "2b1020AMM4X5X1BCCGDgAKF9O"; 
 
-        // --- Flash UI & Network Logic ---
-        window.updateFlashUI = function() {
-            // Only updates the screen as you drag (does NOT fetch)
+        // --- Camera & Flash Logic ---
+        window.updateSingles = function() {
+            // Flash Slider Logic
             const flash = document.getElementById("flashSlider").value;
             document.getElementById("flashVal").textContent = flash + "%";
             document.getElementById("flashTrack").style.width = flash + "%";
-        }
-        
-        window.sendFlashCommand = function() {
-            // Sends the fetch command ONLY when you let go of the slider
-            const flash = document.getElementById("flashSlider").value;
+            
+            // Restored: Send flash brightness to ESP32 instantly in real-time
             if(activeCameraIp) {
                 let pwmValue = Math.round((flash / 100) * 255);
                 fetch(`${activeCameraIp}/flash?v=${pwmValue}`).catch(() => {});
             }
-        }
 
-        window.updateSingles = function() {
+            // Existing Singles Logic
             document.getElementById("luxVal").textContent = document.getElementById("luxThreshold").value + " lux";
             document.getElementById("brightVal").textContent = document.getElementById("globalBrightness").value + " / 10";
             let tz = parseInt(document.getElementById("timeZoneOffset").value);
@@ -276,6 +274,7 @@
             status.textContent = "📸 Snapping photo...";
 
             try {
+                // 1. Fetch image from the dynamic IP
                 const response = await fetch(`${activeCameraIp}/capture`);
                 if (!response.ok) throw new Error("Camera not responding.");
                 
@@ -283,6 +282,7 @@
                 preview.src = URL.createObjectURL(blob);
                 preview.style.display = "block";
 
+                // 2. Send to PlantNet API
                 status.textContent = "🧠 Identifying species...";
                 const formData = new FormData();
                 formData.append('images', blob);
@@ -300,6 +300,7 @@
                 const plantName = bestMatch.species.commonNames[0] || bestMatch.species.scientificName;
 
                 status.innerHTML = `✅ Found: <b>${plantName}</b><br>(${(bestMatch.score * 100).toFixed(1)}% accuracy)`;
+
                 await update(settingsRef, { identified_plant: plantName });
 
             } catch (e) {
@@ -309,7 +310,7 @@
             }
         };
 
-        // --- Remaining Existing Logic ---
+        // --- Existing UI Logic ---
         window.padInput = function(el) { if (el.value !== "") el.value = el.value.padStart(2, '0'); }
 
         window.setPeriod = function(type, p) {
@@ -350,7 +351,7 @@
         get(settingsRef).then((snapshot) => {
             const d = snapshot.val();
             if (d) {
-                if(d.camera_ip) activeCameraIp = d.camera_ip; 
+                if(d.camera_ip) activeCameraIp = d.camera_ip; // Save dynamic IP
                 
                 document.getElementById("tempLow").value = d.tempLow || 40;
                 document.getElementById("tempHigh").value = d.tempHigh || 100;
@@ -406,10 +407,11 @@
             } catch (e) { document.getElementById("statusMsg").textContent = "❌ Error: " + e.message; btn.disabled = false; }
         });
 
+        // Realtime logs and IP updates
         onValue(settingsRef, (s) => {
             const d = s.val();
             if(d) {
-                if(d.camera_ip) activeCameraIp = d.camera_ip; 
+                if(d.camera_ip) activeCameraIp = d.camera_ip; // Keep IP updated instantly
                 if(d.system_logs) {
                     const lb = document.getElementById("serialLog");
                     lb.value = d.system_logs; lb.scrollTop = lb.scrollHeight;
