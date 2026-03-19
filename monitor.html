@@ -237,13 +237,32 @@
     let cameraSettingsInitialized = false; 
     const PLANTNET_KEY = "2b1020AMM4X5X1BCCGDgAKF9O"; 
 
+    // --- TIME FORMATTING & LOGIC ---
     window.formatFullTime = function(hour, minute) {
         let h = hour % 12 || 12;
         let m = minute !== undefined ? minute.toString().padStart(2, '0') : "00";
         let ampm = hour < 12 ? 'AM' : 'PM';
         return `${h}:${m} ${ampm}`;
-    }
+    };
 
+    window.checkIfLightIsOn = function(onH, onM, offH, offM) {
+        if (onH === undefined || offH === undefined) return false;
+        
+        const now = new Date();
+        const currentMins = now.getHours() * 60 + now.getMinutes();
+        
+        const onMins = onH * 60 + (onM || 0);
+        const offMins = offH * 60 + (offM || 0);
+
+        if (onMins < offMins) { 
+            return currentMins >= onMins && currentMins < offMins;
+        } else if (onMins > offMins) { 
+            return currentMins >= onMins || currentMins < offMins;
+        }
+        return false;
+    };
+
+    // --- CAMERA & UI ACTIONS ---
     document.getElementById("gearBtn").onclick = function() {
         this.classList.toggle("active");
         document.getElementById("settingsSidebar").classList.toggle("open");
@@ -251,7 +270,6 @@
 
     function startStream() {
         if(!activeCameraIp) return;
-        // The Cache Buster (?t=...) forces the browser to reconnect perfectly if resolution changed
         document.getElementById("videoFeed").src = `${activeCameraIp}/stream?t=${new Date().getTime()}`;
         document.getElementById("videoFeed").style.display = "block";
         const btn = document.getElementById("streamToggleBtn");
@@ -322,36 +340,24 @@
         if(document.visibilityState === 'hidden') window.turnOffFlash();
     });
 
-    // --- CLOUD SYNC & STREAM RESTART LOGIC ---
     window.sendCamCmd = async function(variable, value, forceHardReload = false) {
         let streamWasOn = isStreamRunning;
-        
-        // 1. Pause Stream safely
         if(streamWasOn) stopStream();
 
-        // 2. Send Command to ESP32
         if(activeCameraIp) {
-            try {
-                await fetch(`${activeCameraIp}/action?var=${variable}&val=${value}`);
-            } catch(e) { console.error("Camera cmd failed", e); }
+            try { await fetch(`${activeCameraIp}/action?var=${variable}&val=${value}`); } catch(e) {}
         }
 
-        // 3. Save Setting to Firebase Memory
         let updates = {};
         updates[`cam_${variable}`] = value;
         update(settingsRef, updates);
 
-        // 4. Resume Stream smoothly
         if(streamWasOn) {
-            if(forceHardReload) {
-                setTimeout(startStream, 800); // More time needed for resolution buffer allocation
-            } else {
-                setTimeout(startStream, 200);
-            }
+            if(forceHardReload) setTimeout(startStream, 800);
+            else setTimeout(startStream, 200);
         }
     };
 
-    // Auto-load memory from Firebase when page opens
     async function syncCameraSettingsFromCloud(data) {
         if(cameraSettingsInitialized) return;
         cameraSettingsInitialized = true;
@@ -448,8 +454,8 @@
         }
     };
 
+    // --- MAIN SYNC LOGIC ---
     onValue(settingsRef, (snapshot) => {
-        // HIDE LOADING SCREEN IMMEDIATELY
         document.getElementById("loading").style.display = "none";
         document.getElementById("dashboard").style.display = "flex";
 
@@ -462,7 +468,7 @@
                 syncCameraSettingsFromCloud(data);
             }
 
-            // Sync Visual Settings from memory
+            // Sync Visual Settings
             if(data.cam_brightness !== undefined) document.getElementById("camBright").value = data.cam_brightness;
             if(data.cam_contrast !== undefined) document.getElementById("camContrast").value = data.cam_contrast;
             if(data.cam_saturation !== undefined) document.getElementById("camSat").value = data.cam_saturation;
@@ -471,25 +477,43 @@
             if(data.cam_vflip !== undefined) document.getElementById("camVflip").checked = (data.cam_vflip == 1);
             if(data.cam_hmirror !== undefined) document.getElementById("camHmirror").checked = (data.cam_hmirror == 1);
             
-            // Restored the Text Assignment Logic so data isn't blank!
+            // Sync Current Sensor Data
             document.getElementById("dispTemp").textContent = data.liveTemp !== undefined ? `${data.liveTemp}°F` : "-- °F";
             document.getElementById("dispHum").textContent = data.liveHum !== undefined ? `${data.liveHum}%` : "-- %";
             document.getElementById("dispSoil").textContent = data.liveSoil !== undefined ? `${data.liveSoil}%` : "-- %";
             document.getElementById("dispLux").textContent = data.liveLux !== undefined ? `${data.liveLux} lux` : "-- lux";
 
+            // Sync Target Ranges
             document.getElementById("dispTemp").nextElementSibling.textContent = `Target: ${data.tempLow || '--'}° - ${data.tempHigh || '--'}°`;
             document.getElementById("dispHum").nextElementSibling.textContent = `Target: ${data.humLow || '--'}% - ${data.humHigh || '--'}%`;
             document.getElementById("dispSoil").nextElementSibling.textContent = `Target: ${data.soilLow || '--'}% - ${data.soilHigh || '--'}%`;
             document.getElementById("dispLux").nextElementSibling.textContent = `Limit: ${data.luxThreshold || '--'} lux`;
 
-            document.getElementById("dispBright").textContent = `${data.globalBrightness || 10}/10`;
+            // --- FIXED: Light Schedule Display & Highlight Logic ---
             let onTime = window.formatFullTime(data.timeOnHour, data.timeOnMin);
             let offTime = window.formatFullTime(data.timeOffHour, data.timeOffMin);
-            document.getElementById("dispTime").textContent = `${onTime} to ${offTime}`;
+            
+            const timeDisplay = document.getElementById("dispTime");
+            timeDisplay.textContent = `${onTime} to ${offTime}`;
+            
+            const isCurrentlyOn = data.timerEnabled && window.checkIfLightIsOn(data.timeOnHour, data.timeOnMin, data.timeOffHour, data.timeOffMin);
+            
+            if (isCurrentlyOn) {
+                timeDisplay.style.color = "var(--accent)"; 
+                timeDisplay.style.textShadow = "0 0 12px rgba(255, 184, 79, 0.4)"; 
+            } else {
+                timeDisplay.style.color = "var(--text)"; 
+                timeDisplay.style.textShadow = "none";
+            }
             
             const tState = document.getElementById("dispTimerState");
-            tState.textContent = data.timerEnabled ? "Timer Active" : "Timer Disabled";
-            tState.style.color = data.timerEnabled ? "#2cff8a" : "var(--muted)";
+            if (data.timerEnabled) {
+                tState.textContent = isCurrentlyOn ? "Timer Active (Lights ON)" : "Timer Active (Lights OFF)";
+                tState.style.color = isCurrentlyOn ? "var(--accent)" : "#2cff8a"; 
+            } else {
+                tState.textContent = "Timer Disabled";
+                tState.style.color = "var(--muted)";
+            }
         }
     });
 </script>
