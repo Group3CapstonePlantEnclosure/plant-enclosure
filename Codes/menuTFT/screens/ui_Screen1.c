@@ -5,23 +5,35 @@
 
 #include "../ui.h"
 
-lv_obj_t * uic_btn_back_network;
-lv_obj_t * uic_network_page;
-lv_obj_t * uic_display_page;
-lv_obj_t * uic_lighting_page;
-lv_obj_t * uic_hum_slider;
-lv_obj_t * uic_temp_slider;
-lv_obj_t * uic_btn_back;
-lv_obj_t * uic_env_page;
-lv_obj_t * uic_Network_Settings;
-lv_obj_t * uic_Display_Settings;
-lv_obj_t * uic_lighting_schedule;
-lv_obj_t * uic_btn_env;
-lv_obj_t * uic_menu_list;
-lv_obj_t * uic_moisture_label;
-lv_obj_t * uic_hum_label;
-lv_obj_t * uic_temp_label;
-lv_obj_t * uic_status_bar;
+lv_obj_t * ui_back;
+lv_obj_t * ui_btn_back;
+lv_obj_t * ui_network_page;
+lv_obj_t * ui_display_page;
+lv_obj_t * ui_lighting_page;
+lv_obj_t * ui_lux_slider;
+lv_obj_t * ui_soil_slider;
+lv_obj_t * ui_hum_slider;
+lv_obj_t * ui_temp_slider;
+lv_obj_t * ui_env_page;
+lv_obj_t * ui_net;
+lv_obj_t * ui_Network_Settings;
+lv_obj_t * ui_disp;
+lv_obj_t * ui_Display_Settings;
+lv_obj_t * ui_light;
+lv_obj_t * ui_lighting_schedule;
+lv_obj_t * ui_tempenv;
+lv_obj_t * ui_btn_env;
+lv_obj_t * ui_menu_list;
+lv_obj_t * ui_Menu;
+lv_obj_t * ui_lux_label;
+lv_obj_t * ui_moisture_label;
+lv_obj_t * ui_hum_label;
+lv_obj_t * ui_temp_label;
+lv_obj_t * ui_Dashboard;
+lv_obj_t * ui_TabView1;
+lv_obj_t * ui_wifistatuslabel;
+lv_obj_t * ui_status_bar;
+lv_obj_t * ui_Screen1;
 lv_obj_t * ui_Screen1 = NULL;
 lv_obj_t * ui_status_bar = NULL;
 lv_obj_t * ui_wifistatuslabel = NULL;
@@ -42,21 +54,15 @@ lv_obj_t * ui_disp = NULL;
 lv_obj_t * ui_Network_Settings = NULL;
 lv_obj_t * ui_net = NULL;
 lv_obj_t * ui_env_page = NULL;
-lv_obj_t * ui_btn_back_env = NULL;
-lv_obj_t * ui_back = NULL;
 lv_obj_t * ui_temp_slider = NULL;
 lv_obj_t * ui_hum_slider = NULL;
 lv_obj_t * ui_soil_slider = NULL;
 lv_obj_t * ui_lux_slider = NULL;
 lv_obj_t * ui_lighting_page = NULL;
-lv_obj_t * ui_btn_back_light = NULL;
-lv_obj_t * ui_back2 = NULL;
 lv_obj_t * ui_display_page = NULL;
-lv_obj_t * ui_btn_back_display = NULL;
-lv_obj_t * ui_back3 = NULL;
 lv_obj_t * ui_network_page = NULL;
-lv_obj_t * ui_btn_back_network = NULL;
-lv_obj_t * ui_back4 = NULL;
+lv_obj_t * ui_btn_back = NULL;
+lv_obj_t * ui_back = NULL;
 // event funtions
 void ui_event_btn_env(lv_event_t * e)
 {
@@ -99,43 +105,13 @@ void ui_event_Network_Settings(lv_event_t * e)
     }
 }
 
-void ui_event_btn_back_env(lv_event_t * e)
+void ui_event_btn_back(lv_event_t * e)
 {
     lv_event_code_t event_code = lv_event_get_code(e);
 
     if(event_code == LV_EVENT_CLICKED) {
         _ui_flag_modify(ui_menu_list, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
         _ui_flag_modify(ui_env_page, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
-    }
-}
-
-void ui_event_btn_back_light(lv_event_t * e)
-{
-    lv_event_code_t event_code = lv_event_get_code(e);
-
-    if(event_code == LV_EVENT_CLICKED) {
-        _ui_flag_modify(ui_lighting_page, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
-        _ui_flag_modify(ui_menu_list, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
-    }
-}
-
-void ui_event_btn_back_display(lv_event_t * e)
-{
-    lv_event_code_t event_code = lv_event_get_code(e);
-
-    if(event_code == LV_EVENT_CLICKED) {
-        _ui_flag_modify(ui_menu_list, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
-        _ui_flag_modify(ui_display_page, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
-    }
-}
-
-void ui_event_btn_back_network(lv_event_t * e)
-{
-    lv_event_code_t event_code = lv_event_get_code(e);
-
-    if(event_code == LV_EVENT_CLICKED) {
-        _ui_flag_modify(ui_menu_list, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
-        _ui_flag_modify(ui_network_page, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
     }
 }
 
@@ -277,20 +253,6 @@ void ui_Screen1_screen_init(void)
     lv_obj_add_flag(ui_env_page, LV_OBJ_FLAG_HIDDEN);     /// Flags
     lv_obj_clear_flag(ui_env_page, LV_OBJ_FLAG_CLICKABLE);      /// Flags
 
-    ui_btn_back_env = lv_btn_create(ui_env_page);
-    lv_obj_set_width(ui_btn_back_env, 100);
-    lv_obj_set_height(ui_btn_back_env, 22);
-    lv_obj_set_x(ui_btn_back_env, 5);
-    lv_obj_set_y(ui_btn_back_env, -89);
-    lv_obj_add_flag(ui_btn_back_env, LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
-    lv_obj_clear_flag(ui_btn_back_env, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
-
-    ui_back = lv_label_create(ui_btn_back_env);
-    lv_obj_set_width(ui_back, LV_SIZE_CONTENT);   /// 1
-    lv_obj_set_height(ui_back, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_align(ui_back, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_back, "←Back");
-
     ui_temp_slider = lv_slider_create(ui_env_page);
     lv_slider_set_value(ui_temp_slider, 0, LV_ANIM_OFF);
     if(lv_slider_get_mode(ui_temp_slider) == LV_SLIDER_MODE_RANGE) lv_slider_set_left_value(ui_temp_slider, 0, LV_ANIM_OFF);
@@ -327,20 +289,6 @@ void ui_Screen1_screen_init(void)
     lv_obj_add_flag(ui_lighting_page, LV_OBJ_FLAG_HIDDEN);     /// Flags
     lv_obj_clear_flag(ui_lighting_page, LV_OBJ_FLAG_CLICKABLE);      /// Flags
 
-    ui_btn_back_light = lv_btn_create(ui_lighting_page);
-    lv_obj_set_width(ui_btn_back_light, 100);
-    lv_obj_set_height(ui_btn_back_light, 22);
-    lv_obj_set_x(ui_btn_back_light, 5);
-    lv_obj_set_y(ui_btn_back_light, -89);
-    lv_obj_add_flag(ui_btn_back_light, LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
-    lv_obj_clear_flag(ui_btn_back_light, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
-
-    ui_back2 = lv_label_create(ui_btn_back_light);
-    lv_obj_set_width(ui_back2, LV_SIZE_CONTENT);   /// 1
-    lv_obj_set_height(ui_back2, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_align(ui_back2, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_back2, "←Back");
-
     ui_display_page = lv_obj_create(ui_Menu);
     lv_obj_remove_style_all(ui_display_page);
     lv_obj_set_width(ui_display_page, lv_pct(100));
@@ -348,20 +296,6 @@ void ui_Screen1_screen_init(void)
     lv_obj_set_align(ui_display_page, LV_ALIGN_CENTER);
     lv_obj_add_flag(ui_display_page, LV_OBJ_FLAG_HIDDEN);     /// Flags
     lv_obj_clear_flag(ui_display_page, LV_OBJ_FLAG_CLICKABLE);      /// Flags
-
-    ui_btn_back_display = lv_btn_create(ui_display_page);
-    lv_obj_set_width(ui_btn_back_display, 100);
-    lv_obj_set_height(ui_btn_back_display, 22);
-    lv_obj_set_x(ui_btn_back_display, 5);
-    lv_obj_set_y(ui_btn_back_display, -89);
-    lv_obj_add_flag(ui_btn_back_display, LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
-    lv_obj_clear_flag(ui_btn_back_display, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
-
-    ui_back3 = lv_label_create(ui_btn_back_display);
-    lv_obj_set_width(ui_back3, LV_SIZE_CONTENT);   /// 1
-    lv_obj_set_height(ui_back3, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_align(ui_back3, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_back3, "←Back");
 
     ui_network_page = lv_obj_create(ui_Menu);
     lv_obj_remove_style_all(ui_network_page);
@@ -371,45 +305,54 @@ void ui_Screen1_screen_init(void)
     lv_obj_add_flag(ui_network_page, LV_OBJ_FLAG_HIDDEN);     /// Flags
     lv_obj_clear_flag(ui_network_page, LV_OBJ_FLAG_CLICKABLE);      /// Flags
 
-    ui_btn_back_network = lv_btn_create(ui_network_page);
-    lv_obj_set_width(ui_btn_back_network, 100);
-    lv_obj_set_height(ui_btn_back_network, 22);
-    lv_obj_set_x(ui_btn_back_network, 5);
-    lv_obj_set_y(ui_btn_back_network, -89);
-    lv_obj_add_flag(ui_btn_back_network, LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
-    lv_obj_clear_flag(ui_btn_back_network, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
+    ui_btn_back = lv_btn_create(ui_Screen1);
+    lv_obj_set_width(ui_btn_back, 100);
+    lv_obj_set_height(ui_btn_back, 22);
+    lv_obj_set_x(ui_btn_back, 3);
+    lv_obj_set_y(ui_btn_back, 4);
+    lv_obj_add_flag(ui_btn_back, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
+    lv_obj_clear_flag(ui_btn_back, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
 
-    ui_back4 = lv_label_create(ui_btn_back_network);
-    lv_obj_set_width(ui_back4, LV_SIZE_CONTENT);   /// 1
-    lv_obj_set_height(ui_back4, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_align(ui_back4, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_back4, "←Back");
+    ui_back = lv_label_create(ui_btn_back);
+    lv_obj_set_width(ui_back, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_back, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_align(ui_back, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_back, "< Back");
 
     lv_obj_add_event_cb(ui_btn_env, ui_event_btn_env, LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(ui_lighting_schedule, ui_event_lighting_schedule, LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(ui_Display_Settings, ui_event_Display_Settings, LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(ui_Network_Settings, ui_event_Network_Settings, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(ui_btn_back_env, ui_event_btn_back_env, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(ui_btn_back_light, ui_event_btn_back_light, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(ui_btn_back_display, ui_event_btn_back_display, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(ui_btn_back_network, ui_event_btn_back_network, LV_EVENT_ALL, NULL);
-    uic_status_bar = ui_status_bar;
-    uic_temp_label = ui_temp_label;
-    uic_hum_label = ui_hum_label;
-    uic_moisture_label = ui_moisture_label;
-    uic_menu_list = ui_menu_list;
-    uic_btn_env = ui_btn_env;
-    uic_lighting_schedule = ui_lighting_schedule;
-    uic_Display_Settings = ui_Display_Settings;
-    uic_Network_Settings = ui_Network_Settings;
-    uic_env_page = ui_env_page;
-    uic_btn_back = ui_btn_back_env;
-    uic_temp_slider = ui_temp_slider;
-    uic_hum_slider = ui_hum_slider;
-    uic_lighting_page = ui_lighting_page;
-    uic_display_page = ui_display_page;
-    uic_network_page = ui_network_page;
-    uic_btn_back_network = ui_btn_back_network;
+    lv_obj_add_event_cb(ui_btn_back, ui_event_btn_back, LV_EVENT_ALL, NULL);
+    ui_Screen1 = ui_Screen1;
+    ui_status_bar = ui_status_bar;
+    ui_wifistatuslabel = ui_wifistatuslabel;
+    ui_TabView1 = ui_TabView1;
+    ui_Dashboard = ui_Dashboard;
+    ui_temp_label = ui_temp_label;
+    ui_hum_label = ui_hum_label;
+    ui_moisture_label = ui_moisture_label;
+    ui_lux_label = ui_lux_label;
+    ui_Menu = ui_Menu;
+    ui_menu_list = ui_menu_list;
+    ui_btn_env = ui_btn_env;
+    ui_tempenv = ui_tempenv;
+    ui_lighting_schedule = ui_lighting_schedule;
+    ui_light = ui_light;
+    ui_Display_Settings = ui_Display_Settings;
+    ui_disp = ui_disp;
+    ui_Network_Settings = ui_Network_Settings;
+    ui_net = ui_net;
+    ui_env_page = ui_env_page;
+    ui_temp_slider = ui_temp_slider;
+    ui_hum_slider = ui_hum_slider;
+    ui_soil_slider = ui_soil_slider;
+    ui_lux_slider = ui_lux_slider;
+    ui_lighting_page = ui_lighting_page;
+    ui_display_page = ui_display_page;
+    ui_network_page = ui_network_page;
+    ui_btn_back = ui_btn_back;
+    ui_back = ui_back;
 
 }
 
@@ -419,56 +362,62 @@ void ui_Screen1_screen_destroy(void)
 
     // NULL screen variables
     ui_Screen1 = NULL;
-    uic_status_bar = NULL;
+    ui_Screen1 = NULL;
+    ui_status_bar = NULL;
     ui_status_bar = NULL;
     ui_wifistatuslabel = NULL;
+    ui_wifistatuslabel = NULL;
+    ui_TabView1 = NULL;
     ui_TabView1 = NULL;
     ui_Dashboard = NULL;
-    uic_temp_label = NULL;
+    ui_Dashboard = NULL;
     ui_temp_label = NULL;
-    uic_hum_label = NULL;
+    ui_temp_label = NULL;
     ui_hum_label = NULL;
-    uic_moisture_label = NULL;
+    ui_hum_label = NULL;
+    ui_moisture_label = NULL;
     ui_moisture_label = NULL;
     ui_lux_label = NULL;
+    ui_lux_label = NULL;
     ui_Menu = NULL;
-    uic_menu_list = NULL;
+    ui_Menu = NULL;
     ui_menu_list = NULL;
-    uic_btn_env = NULL;
+    ui_menu_list = NULL;
+    ui_btn_env = NULL;
     ui_btn_env = NULL;
     ui_tempenv = NULL;
-    uic_lighting_schedule = NULL;
+    ui_tempenv = NULL;
+    ui_lighting_schedule = NULL;
     ui_lighting_schedule = NULL;
     ui_light = NULL;
-    uic_Display_Settings = NULL;
+    ui_light = NULL;
+    ui_Display_Settings = NULL;
     ui_Display_Settings = NULL;
     ui_disp = NULL;
-    uic_Network_Settings = NULL;
+    ui_disp = NULL;
+    ui_Network_Settings = NULL;
     ui_Network_Settings = NULL;
     ui_net = NULL;
-    uic_env_page = NULL;
+    ui_net = NULL;
     ui_env_page = NULL;
-    uic_btn_back = NULL;
-    ui_btn_back_env = NULL;
-    ui_back = NULL;
-    uic_temp_slider = NULL;
+    ui_env_page = NULL;
     ui_temp_slider = NULL;
-    uic_hum_slider = NULL;
+    ui_temp_slider = NULL;
+    ui_hum_slider = NULL;
     ui_hum_slider = NULL;
     ui_soil_slider = NULL;
+    ui_soil_slider = NULL;
     ui_lux_slider = NULL;
-    uic_lighting_page = NULL;
+    ui_lux_slider = NULL;
     ui_lighting_page = NULL;
-    ui_btn_back_light = NULL;
-    ui_back2 = NULL;
-    uic_display_page = NULL;
+    ui_lighting_page = NULL;
     ui_display_page = NULL;
-    ui_btn_back_display = NULL;
-    ui_back3 = NULL;
-    uic_network_page = NULL;
+    ui_display_page = NULL;
     ui_network_page = NULL;
-    uic_btn_back_network = NULL;
-    ui_btn_back_network = NULL;
-    ui_back4 = NULL;
+    ui_network_page = NULL;
+    ui_btn_back = NULL;
+    ui_btn_back = NULL;
+    ui_back = NULL;
+    ui_back = NULL;
 
 }
