@@ -269,7 +269,7 @@
     };
 
     function startStream() {
-        if(!activeCameraIp) return;
+        if(!activeCameraIp) return; //if camera resolution changed refreshes stream for connection
         document.getElementById("videoFeed").src = `${activeCameraIp}/stream?t=${new Date().getTime()}`;
         document.getElementById("videoFeed").style.display = "block";
         const btn = document.getElementById("streamToggleBtn");
@@ -340,24 +340,31 @@
         if(document.visibilityState === 'hidden') window.turnOffFlash();
     });
 
+    // --- CLOUD SYNC & STREAM RESTART LOGIC ---
     window.sendCamCmd = async function(variable, value, forceHardReload = false) {
+
+        //Stream Pause logic
         let streamWasOn = isStreamRunning;
         if(streamWasOn) stopStream();
 
+        //Send command to esp32
         if(activeCameraIp) {
-            try { await fetch(`${activeCameraIp}/action?var=${variable}&val=${value}`); } catch(e) {}
+            try { await fetch(`${activeCameraIp}/action?var=${variable}&val=${value}`); } catch(e) {console.error("Camera cmd failed", e); }
         }
 
+        //Save Settings on Firebase
         let updates = {};
         updates[`cam_${variable}`] = value;
         update(settingsRef, updates);
 
+        //Resume Stream
         if(streamWasOn) {
             if(forceHardReload) setTimeout(startStream, 800);
             else setTimeout(startStream, 200);
         }
     };
 
+    //Load memory from Firebase when page is opened
     async function syncCameraSettingsFromCloud(data) {
         if(cameraSettingsInitialized) return;
         cameraSettingsInitialized = true;
@@ -456,6 +463,7 @@
 
     // --- MAIN SYNC LOGIC ---
     onValue(settingsRef, (snapshot) => {
+        //hide loading screen
         document.getElementById("loading").style.display = "none";
         document.getElementById("dashboard").style.display = "flex";
 
@@ -488,6 +496,7 @@
             document.getElementById("dispHum").nextElementSibling.textContent = `Target: ${data.humLow || '--'}% - ${data.humHigh || '--'}%`;
             document.getElementById("dispSoil").nextElementSibling.textContent = `Target: ${data.soilLow || '--'}% - ${data.soilHigh || '--'}%`;
             document.getElementById("dispLux").nextElementSibling.textContent = `Limit: ${data.luxThreshold || '--'} lux`;
+            document.getElementById("dispBright").textContent = `${data.globalBrightness || 10}/10`;
 
             // --- FIXED: Light Schedule Display & Highlight Logic ---
             let onTime = window.formatFullTime(data.timeOnHour, data.timeOnMin);
