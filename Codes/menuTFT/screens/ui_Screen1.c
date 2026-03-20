@@ -6,7 +6,7 @@
 #include "../ui.h"
 
 lv_obj_t * ui_back;
-lv_obj_t * ui_btn_back;
+lv_obj_t * ui_btn_back_global;
 lv_obj_t * ui_network_page;
 lv_obj_t * ui_display_page;
 lv_obj_t * ui_lighting_page;
@@ -33,7 +33,6 @@ lv_obj_t * ui_Dashboard;
 lv_obj_t * ui_TabView1;
 lv_obj_t * ui_wifistatuslabel;
 lv_obj_t * ui_status_bar;
-lv_obj_t * ui_Screen1;
 lv_obj_t * ui_Screen1 = NULL;
 lv_obj_t * ui_status_bar = NULL;
 lv_obj_t * ui_wifistatuslabel = NULL;
@@ -61,7 +60,7 @@ lv_obj_t * ui_lux_slider = NULL;
 lv_obj_t * ui_lighting_page = NULL;
 lv_obj_t * ui_display_page = NULL;
 lv_obj_t * ui_network_page = NULL;
-lv_obj_t * ui_btn_back = NULL;
+lv_obj_t * ui_btn_back_global = NULL;
 lv_obj_t * ui_back = NULL;
 // event funtions
 void ui_event_btn_env(lv_event_t * e)
@@ -105,13 +104,12 @@ void ui_event_Network_Settings(lv_event_t * e)
     }
 }
 
-void ui_event_btn_back(lv_event_t * e)
+void ui_event_btn_back_global(lv_event_t * e)
 {
     lv_event_code_t event_code = lv_event_get_code(e);
 
     if(event_code == LV_EVENT_CLICKED) {
-        _ui_flag_modify(ui_menu_list, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
-        _ui_flag_modify(ui_env_page, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
+        global_back_cb(e);
     }
 }
 
@@ -293,6 +291,8 @@ void ui_Screen1_screen_init(void)
     lv_obj_remove_style_all(ui_display_page);
     lv_obj_set_width(ui_display_page, lv_pct(100));
     lv_obj_set_height(ui_display_page, lv_pct(100));
+    lv_obj_set_x(ui_display_page, 0);
+    lv_obj_set_y(ui_display_page, 2);
     lv_obj_set_align(ui_display_page, LV_ALIGN_CENTER);
     lv_obj_add_flag(ui_display_page, LV_OBJ_FLAG_HIDDEN);     /// Flags
     lv_obj_clear_flag(ui_display_page, LV_OBJ_FLAG_CLICKABLE);      /// Flags
@@ -305,15 +305,15 @@ void ui_Screen1_screen_init(void)
     lv_obj_add_flag(ui_network_page, LV_OBJ_FLAG_HIDDEN);     /// Flags
     lv_obj_clear_flag(ui_network_page, LV_OBJ_FLAG_CLICKABLE);      /// Flags
 
-    ui_btn_back = lv_btn_create(ui_Screen1);
-    lv_obj_set_width(ui_btn_back, 100);
-    lv_obj_set_height(ui_btn_back, 22);
-    lv_obj_set_x(ui_btn_back, 3);
-    lv_obj_set_y(ui_btn_back, 4);
-    lv_obj_add_flag(ui_btn_back, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
-    lv_obj_clear_flag(ui_btn_back, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
+    ui_btn_back_global = lv_btn_create(ui_Screen1);
+    lv_obj_set_width(ui_btn_back_global, 100);
+    lv_obj_set_height(ui_btn_back_global, 22);
+    lv_obj_set_x(ui_btn_back_global, 3);
+    lv_obj_set_y(ui_btn_back_global, 3);
+    lv_obj_add_flag(ui_btn_back_global, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
+    lv_obj_clear_flag(ui_btn_back_global, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
 
-    ui_back = lv_label_create(ui_btn_back);
+    ui_back = lv_label_create(ui_btn_back_global);
     lv_obj_set_width(ui_back, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_back, LV_SIZE_CONTENT);    /// 1
     lv_obj_set_align(ui_back, LV_ALIGN_CENTER);
@@ -323,8 +323,7 @@ void ui_Screen1_screen_init(void)
     lv_obj_add_event_cb(ui_lighting_schedule, ui_event_lighting_schedule, LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(ui_Display_Settings, ui_event_Display_Settings, LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(ui_Network_Settings, ui_event_Network_Settings, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(ui_btn_back, ui_event_btn_back, LV_EVENT_ALL, NULL);
-    ui_Screen1 = ui_Screen1;
+    lv_obj_add_event_cb(ui_btn_back_global, ui_event_btn_back_global, LV_EVENT_ALL, NULL);
     ui_status_bar = ui_status_bar;
     ui_wifistatuslabel = ui_wifistatuslabel;
     ui_TabView1 = ui_TabView1;
@@ -351,7 +350,7 @@ void ui_Screen1_screen_init(void)
     ui_lighting_page = ui_lighting_page;
     ui_display_page = ui_display_page;
     ui_network_page = ui_network_page;
-    ui_btn_back = ui_btn_back;
+    ui_btn_back_global = ui_btn_back_global;
     ui_back = ui_back;
 
 }
@@ -362,7 +361,6 @@ void ui_Screen1_screen_destroy(void)
 
     // NULL screen variables
     ui_Screen1 = NULL;
-    ui_Screen1 = NULL;
     ui_status_bar = NULL;
     ui_status_bar = NULL;
     ui_wifistatuslabel = NULL;
@@ -415,8 +413,8 @@ void ui_Screen1_screen_destroy(void)
     ui_display_page = NULL;
     ui_network_page = NULL;
     ui_network_page = NULL;
-    ui_btn_back = NULL;
-    ui_btn_back = NULL;
+    ui_btn_back_global = NULL;
+    ui_btn_back_global = NULL;
     ui_back = NULL;
     ui_back = NULL;
 

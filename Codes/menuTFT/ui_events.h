@@ -11,6 +11,7 @@ extern "C" {
 #endif
 
 void open_wifi_scanner_cb(lv_event_t * e);
+void global_back_cb(lv_event_t * e);
 
 #ifdef __cplusplus
 } /*extern "C"*/

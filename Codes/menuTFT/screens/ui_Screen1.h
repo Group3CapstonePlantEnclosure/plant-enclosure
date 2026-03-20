@@ -44,11 +44,10 @@ extern lv_obj_t * ui_lux_slider;
 extern lv_obj_t * ui_lighting_page;
 extern lv_obj_t * ui_display_page;
 extern lv_obj_t * ui_network_page;
-extern void ui_event_btn_back(lv_event_t * e);
-extern lv_obj_t * ui_btn_back;
+extern void ui_event_btn_back_global(lv_event_t * e);
+extern lv_obj_t * ui_btn_back_global;
 extern lv_obj_t * ui_back;
 // CUSTOM VARIABLES
-extern lv_obj_t * ui_Screen1;
 extern lv_obj_t * ui_status_bar;
 extern lv_obj_t * ui_wifistatuslabel;
 extern lv_obj_t * ui_TabView1;
@@ -75,7 +74,7 @@ extern lv_obj_t * ui_lux_slider;
 extern lv_obj_t * ui_lighting_page;
 extern lv_obj_t * ui_display_page;
 extern lv_obj_t * ui_network_page;
-extern lv_obj_t * ui_btn_back;
+extern lv_obj_t * ui_btn_back_global;
 extern lv_obj_t * ui_back;
 
 #ifdef __cplusplus

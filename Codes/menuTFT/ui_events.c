@@ -9,3 +9,8 @@ void open_wifi_scanner_cb(lv_event_t * e)
 {
 	// Your code here
 }
+
+void global_back_cb(lv_event_t * e)
+{
+	// Your code here
+}
