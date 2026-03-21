@@ -212,6 +212,7 @@ void global_back_cb(lv_event_t * e) {
     if(ui_env_page != NULL) lv_obj_add_flag(ui_env_page, LV_OBJ_FLAG_HIDDEN);
     if(ui_lighting_page != NULL) lv_obj_add_flag(ui_lighting_page, LV_OBJ_FLAG_HIDDEN);
     if(ui_display_page != NULL) lv_obj_add_flag(ui_display_page, LV_OBJ_FLAG_HIDDEN);
+    if(ui_network_page != NULL) lv_obj_add_flag(ui_network_page, LV_OBJ_FLAG_HIDDEN); // Added this!
     
     // Hide the back button itself
     lv_obj_t * btn = lv_event_get_target(e);

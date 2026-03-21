@@ -7,7 +7,6 @@
 
 lv_obj_t * ui_back;
 lv_obj_t * ui_btn_back_global;
-lv_obj_t * ui_network_page;
 lv_obj_t * ui_display_page;
 lv_obj_t * ui_lighting_page;
 lv_obj_t * ui_lux_slider;
@@ -59,7 +58,6 @@ lv_obj_t * ui_soil_slider = NULL;
 lv_obj_t * ui_lux_slider = NULL;
 lv_obj_t * ui_lighting_page = NULL;
 lv_obj_t * ui_display_page = NULL;
-lv_obj_t * ui_network_page = NULL;
 lv_obj_t * ui_btn_back_global = NULL;
 lv_obj_t * ui_back = NULL;
 // event funtions
@@ -70,6 +68,7 @@ void ui_event_btn_env(lv_event_t * e)
     if(event_code == LV_EVENT_CLICKED) {
         _ui_flag_modify(ui_menu_list, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
         _ui_flag_modify(ui_env_page, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
+        _ui_flag_modify(ui_btn_back_global, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
     }
 }
 
@@ -80,6 +79,7 @@ void ui_event_lighting_schedule(lv_event_t * e)
     if(event_code == LV_EVENT_CLICKED) {
         _ui_flag_modify(ui_lighting_page, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
         _ui_flag_modify(ui_menu_list, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
+        _ui_flag_modify(ui_btn_back_global, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
     }
 }
 
@@ -90,6 +90,7 @@ void ui_event_Display_Settings(lv_event_t * e)
     if(event_code == LV_EVENT_CLICKED) {
         _ui_flag_modify(ui_menu_list, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
         _ui_flag_modify(ui_display_page, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
+        _ui_flag_modify(ui_btn_back_global, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
     }
 }
 
@@ -99,8 +100,7 @@ void ui_event_Network_Settings(lv_event_t * e)
 
     if(event_code == LV_EVENT_CLICKED) {
         open_wifi_scanner_cb(e);
-        _ui_flag_modify(ui_menu_list, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
-        _ui_flag_modify(ui_network_page, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
+        _ui_flag_modify(ui_btn_back_global, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
     }
 }
 
@@ -297,14 +297,6 @@ void ui_Screen1_screen_init(void)
     lv_obj_add_flag(ui_display_page, LV_OBJ_FLAG_HIDDEN);     /// Flags
     lv_obj_clear_flag(ui_display_page, LV_OBJ_FLAG_CLICKABLE);      /// Flags
 
-    ui_network_page = lv_obj_create(ui_Menu);
-    lv_obj_remove_style_all(ui_network_page);
-    lv_obj_set_width(ui_network_page, lv_pct(100));
-    lv_obj_set_height(ui_network_page, lv_pct(100));
-    lv_obj_set_align(ui_network_page, LV_ALIGN_CENTER);
-    lv_obj_add_flag(ui_network_page, LV_OBJ_FLAG_HIDDEN);     /// Flags
-    lv_obj_clear_flag(ui_network_page, LV_OBJ_FLAG_CLICKABLE);      /// Flags
-
     ui_btn_back_global = lv_btn_create(ui_Screen1);
     lv_obj_set_width(ui_btn_back_global, 100);
     lv_obj_set_height(ui_btn_back_global, 22);
@@ -349,7 +341,6 @@ void ui_Screen1_screen_init(void)
     ui_lux_slider = ui_lux_slider;
     ui_lighting_page = ui_lighting_page;
     ui_display_page = ui_display_page;
-    ui_network_page = ui_network_page;
     ui_btn_back_global = ui_btn_back_global;
     ui_back = ui_back;
 
@@ -411,8 +402,6 @@ void ui_Screen1_screen_destroy(void)
     ui_lighting_page = NULL;
     ui_display_page = NULL;
     ui_display_page = NULL;
-    ui_network_page = NULL;
-    ui_network_page = NULL;
     ui_btn_back_global = NULL;
     ui_btn_back_global = NULL;
     ui_back = NULL;

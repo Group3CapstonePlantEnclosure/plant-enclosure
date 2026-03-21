@@ -43,7 +43,6 @@ extern lv_obj_t * ui_soil_slider;
 extern lv_obj_t * ui_lux_slider;
 extern lv_obj_t * ui_lighting_page;
 extern lv_obj_t * ui_display_page;
-extern lv_obj_t * ui_network_page;
 extern void ui_event_btn_back_global(lv_event_t * e);
 extern lv_obj_t * ui_btn_back_global;
 extern lv_obj_t * ui_back;
@@ -73,7 +72,6 @@ extern lv_obj_t * ui_soil_slider;
 extern lv_obj_t * ui_lux_slider;
 extern lv_obj_t * ui_lighting_page;
 extern lv_obj_t * ui_display_page;
-extern lv_obj_t * ui_network_page;
 extern lv_obj_t * ui_btn_back_global;
 extern lv_obj_t * ui_back;
 
