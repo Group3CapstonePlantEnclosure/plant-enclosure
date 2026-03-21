@@ -212,8 +212,6 @@ void global_back_cb(lv_event_t * e) {
     if(ui_env_page != NULL) lv_obj_add_flag(ui_env_page, LV_OBJ_FLAG_HIDDEN);
     if(ui_lighting_page != NULL) lv_obj_add_flag(ui_lighting_page, LV_OBJ_FLAG_HIDDEN);
     if(ui_display_page != NULL) lv_obj_add_flag(ui_display_page, LV_OBJ_FLAG_HIDDEN);
-    if(ui_network_page != NULL) lv_obj_add_flag(ui_network_page, LV_OBJ_FLAG_HIDDEN); // Added this!
-    
     // Hide the back button itself
     lv_obj_t * btn = lv_event_get_target(e);
     lv_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
@@ -405,16 +403,22 @@ void setup() {
   Serial.begin(115200);
   Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
 
-  ledcSetup(pwmChannel, pwmFreq, pwmResolution);
-  ledcAttachPin(TFT_BL, pwmChannel);
-  setBacklight(255); 
+  // 1. FORCE BACKLIGHT ON (Bypass PWM for now)
+  pinMode(TFT_BL, OUTPUT);
+  digitalWrite(TFT_BL, HIGH); 
 
+  // 2. INIT SCREEN
   tft.begin();
   tft.setRotation(1);
   tft.setSwapBytes(true); 
+  
+  // 3. THE RED SCREEN TEST
+  tft.fillScreen(TFT_RED); 
+  delay(2000); // Show Red for 2 seconds so you know SPI is working!
   tft.fillScreen(TFT_BLACK);
 
-  touch_calibrate();
+  // 4. TEMPORARILY DISABLE CALIBRATION
+  // touch_calibrate(); 
 
   // --- Initialize LVGL v8 ---
   lv_init();
@@ -437,17 +441,10 @@ void setup() {
   // --- INITIALIZE SQUARELINE UI ---
   ui_init();
 
-  // --- MAP SQUARELINE OBJECTS TO ARDUINO VARIABLES ---
+  // --- MAP SQUARELINE OBJECTS ---
   tabview = ui_TabView1; 
   temp_slider = ui_temp_slider;
   hum_slider = ui_hum_slider;
-  // NOTE: If you haven't added these to SquareLine yet, leave them commented!
-  // soil_slider = ui_soil_slider;
-  // lux_slider = ui_lux_slider;
-  // temp_slider_label = ui_temp_slider_label;
-  // hum_slider_label = ui_hum_slider_label;
-  // timer_sw = ui_timer_sw;
-  // dm_sw = ui_dm_sw;
 
   build_time_picker_modal();
 
@@ -456,10 +453,7 @@ void setup() {
   // --- WIFI BOOT ROUTINE ---
   isConnecting = true; 
   WiFi.mode(WIFI_STA);
-  // (Keep your existing fast-boot connection logic here)
   isConnecting = false; 
-
-  // xTaskCreatePinnedToCore(cloudTask, "CloudTask", 8192, NULL, 1, &CloudTaskHandle, 0);
 }
 
 void loop() {
