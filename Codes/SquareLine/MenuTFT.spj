@@ -4610,8 +4610,8 @@
                 "flags": 17,
                 "strtype": "OBJECT/Size",
                 "intarray": [
-                  320,
-                  210
+                  480,
+                  290
                 ],
                 "InheritedType": 7
               },
@@ -5101,8 +5101,8 @@
           }
         ],
         "isPage": true,
-        "editor_posx": 400,
-        "editor_posy": -400,
+        "editor_posx": 600,
+        "editor_posy": -600,
         "properties": [
           {
             "nid": 10,
@@ -5233,8 +5233,8 @@
   "info": {
     "name": "MenuTFT.spj",
     "depth": 1,
-    "width": 320,
-    "height": 240,
+    "width": 480,
+    "height": 320,
     "rotation": 0,
     "offset_x": 0,
     "offset_y": 0,
@@ -5257,7 +5257,7 @@
     "custom_variable_prefix": "ui",
     "separate_screen_save": false,
     "hierarchy_state_save": false,
-    "backup_cnt": 20,
+    "backup_cnt": 21,
     "autosave_cnt": 0,
     "group_color_cnt": 0,
     "imagebytearrayprefix": "",

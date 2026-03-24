@@ -291,6 +291,8 @@ void ui_Screen1_screen_init(void)
     lv_obj_remove_style_all(ui_display_page);
     lv_obj_set_width(ui_display_page, lv_pct(100));
     lv_obj_set_height(ui_display_page, lv_pct(100));
+    lv_obj_set_x(ui_display_page, 0);
+    lv_obj_set_y(ui_display_page, 2);
     lv_obj_set_align(ui_display_page, LV_ALIGN_CENTER);
     lv_obj_add_flag(ui_display_page, LV_OBJ_FLAG_HIDDEN);     /// Flags
     lv_obj_clear_flag(ui_display_page, LV_OBJ_FLAG_CLICKABLE);      /// Flags
