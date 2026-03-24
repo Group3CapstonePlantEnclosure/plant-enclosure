@@ -461,7 +461,7 @@
         }
     };
 
-    // --- MAIN SYNC LOGIC ---
+ // --- MAIN SYNC LOGIC ---
     onValue(settingsRef, (snapshot) => {
         //hide loading screen
         document.getElementById("loading").style.display = "none";
@@ -496,32 +496,40 @@
             document.getElementById("dispHum").nextElementSibling.textContent = `Target: ${data.humLow || '--'}% - ${data.humHigh || '--'}%`;
             document.getElementById("dispSoil").nextElementSibling.textContent = `Target: ${data.soilLow || '--'}% - ${data.soilHigh || '--'}%`;
             document.getElementById("dispLux").nextElementSibling.textContent = `Limit: ${data.luxThreshold || '--'} lux`;
-            document.getElementById("dispBright").textContent = `${data.globalBrightness || 10}/10`;
+            
+            // FIX: Safe check for dispBright so it doesn't crash the script if the element is missing
+            const dispBrightEl = document.getElementById("dispBright");
+            if (dispBrightEl) {
+                dispBrightEl.textContent = `${data.globalBrightness || 10}/10`;
+            }
 
             // --- FIXED: Light Schedule Display & Highlight Logic ---
-            let onTime = window.formatFullTime(data.timeOnHour, data.timeOnMin);
-            let offTime = window.formatFullTime(data.timeOffHour, data.timeOffMin);
-            
-            const timeDisplay = document.getElementById("dispTime");
-            timeDisplay.textContent = `${onTime} to ${offTime}`;
-            
-            const isCurrentlyOn = data.timerEnabled && window.checkIfLightIsOn(data.timeOnHour, data.timeOnMin, data.timeOffHour, data.timeOffMin);
-            
-            if (isCurrentlyOn) {
-                timeDisplay.style.color = "var(--accent)"; 
-                timeDisplay.style.textShadow = "0 0 12px rgba(255, 184, 79, 0.4)"; 
-            } else {
-                timeDisplay.style.color = "var(--text)"; 
-                timeDisplay.style.textShadow = "none";
-            }
-            
-            const tState = document.getElementById("dispTimerState");
-            if (data.timerEnabled) {
-                tState.textContent = isCurrentlyOn ? "Timer Active (Lights ON)" : "Timer Active (Lights OFF)";
-                tState.style.color = isCurrentlyOn ? "var(--accent)" : "#2cff8a"; 
-            } else {
-                tState.textContent = "Timer Disabled";
-                tState.style.color = "var(--muted)";
+            // Only try to format the time if the variables actually exist in Firebase
+            if (data.timeOnHour !== undefined && data.timeOffHour !== undefined) {
+                let onTime = window.formatFullTime(data.timeOnHour, data.timeOnMin);
+                let offTime = window.formatFullTime(data.timeOffHour, data.timeOffMin);
+                
+                const timeDisplay = document.getElementById("dispTime");
+                timeDisplay.textContent = `${onTime} to ${offTime}`;
+                
+                const isCurrentlyOn = data.timerEnabled && window.checkIfLightIsOn(data.timeOnHour, data.timeOnMin, data.timeOffHour, data.timeOffMin);
+                
+                if (isCurrentlyOn) {
+                    timeDisplay.style.color = "var(--accent)"; 
+                    timeDisplay.style.textShadow = "0 0 12px rgba(255, 184, 79, 0.4)"; 
+                } else {
+                    timeDisplay.style.color = "var(--text)"; 
+                    timeDisplay.style.textShadow = "none";
+                }
+                
+                const tState = document.getElementById("dispTimerState");
+                if (data.timerEnabled) {
+                    tState.textContent = isCurrentlyOn ? "Timer Active (Lights ON)" : "Timer Active (Lights OFF)";
+                    tState.style.color = isCurrentlyOn ? "var(--accent)" : "#2cff8a"; 
+                } else {
+                    tState.textContent = "Timer Disabled";
+                    tState.style.color = "var(--muted)";
+                }
             }
         }
     });
