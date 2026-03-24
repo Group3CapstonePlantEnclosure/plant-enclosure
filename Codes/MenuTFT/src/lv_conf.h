@@ -12,6 +12,6 @@
 
 /* Standard font for SquareLine */
 #define LV_FONT_MONTSERRAT_14 1
-#define LV_FONT_MONTSERRAT_18 1
+#define LV_FONT_MONTSERRAT_18 0
 
 #endif

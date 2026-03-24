@@ -79,8 +79,13 @@ volatile bool isAsleep = false;
 
 TFT_eSPI tft = TFT_eSPI();
 
-static const uint16_t screenWidth  = 320;
-static const uint16_t screenHeight = 240;
+// 1. Update Resolution
+static const uint16_t screenWidth  = 480; 
+static const uint16_t screenHeight = 320;
+
+// 2. Increase the buffer size (S3 has plenty of RAM)
+// We will use 40 lines of pixels instead of 10 for smoother scrolling
+static lv_color_t buf[screenWidth * 40];
 
 // --- SYSTEM GLOBALS ---
 float liveTemp = 0.0, liveHum = 0.0, liveLux = 0.0;
