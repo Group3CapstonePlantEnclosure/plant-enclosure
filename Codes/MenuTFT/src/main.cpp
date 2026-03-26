@@ -23,7 +23,6 @@ RTC_DATA_ATTR uint8_t rtc_channel;
 
 // --- GLOBALS FOR DISPLAY (LVGL v8.3) ---
 static lv_disp_draw_buf_t draw_buf;
-static lv_color_t buf[320 * 10]; 
 
 // --- UI POINTERS (Mapped to SquareLine in setup) ---
 lv_obj_t * tabview;
@@ -60,9 +59,9 @@ void build_wifi_scanner_ui();
 void open_time_picker(bool isOnTime);
 
 // --- PIN DEFINITIONS ---
+// PIN 38 REMOVED to protect PSRAM
 #define TOUCH_IRQ  1  
 #define SD_CS      5
-#define TFT_BL    38  
 
 #ifndef RXD2
 #define RXD2 16
@@ -84,8 +83,7 @@ static const uint16_t screenWidth  = 480;
 static const uint16_t screenHeight = 320;
 
 // 2. Increase the buffer size (S3 has plenty of RAM)
-// We will use 40 lines of pixels instead of 10 for smoother scrolling
-static lv_color_t buf[screenWidth * 40];
+static lv_color_t *buf;
 
 // --- SYSTEM GLOBALS ---
 float liveTemp = 0.0, liveHum = 0.0, liveLux = 0.0;
@@ -139,6 +137,10 @@ void sysLog(String msg) {
 // CALIBRATION ROUTINE
 // ==========================================
 void touch_calibrate() {
+  // Completely bypassed for screen testing to prevent compiler errors
+  return; 
+  
+  /* --- TOUCH CODE HIDDEN FROM COMPILER ---
   uint16_t calibrationData[5];
   uint8_t calDataOK = 0;
 
@@ -174,6 +176,7 @@ void touch_calibrate() {
       f.close();
     }
   }
+  ---------------------------------------- */
 }
 
 // ==========================================
@@ -195,47 +198,32 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
 }
 
 void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data) {
-  uint16_t touchX, touchY;
-  bool touched = tft.getTouch(&touchX, &touchY);
-
-  if (touched) {
-    data->point.x = touchX;
-    data->point.y = touchY;
-    data->state = LV_INDEV_STATE_PR;
-  } else {
-    data->state = LV_INDEV_STATE_REL;
-  }
+  // Forced bypass so it compiles without tft.getTouch
+  data->state = LV_INDEV_STATE_REL;
 }
 
 // ==========================================
 // SQUARELINE C++ BRIDGES
 // ==========================================
 
-// 1. THE GLOBAL BACK BUTTON LOGIC
 void global_back_cb(lv_event_t * e) {
-    // Hide all possible sub-pages
     if(ui_env_page != NULL) lv_obj_add_flag(ui_env_page, LV_OBJ_FLAG_HIDDEN);
     if(ui_lighting_page != NULL) lv_obj_add_flag(ui_lighting_page, LV_OBJ_FLAG_HIDDEN);
     if(ui_display_page != NULL) lv_obj_add_flag(ui_display_page, LV_OBJ_FLAG_HIDDEN);
-    // Hide the back button itself
     lv_obj_t * btn = lv_event_get_target(e);
     lv_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
-
-    // Show the main menu list
     if(ui_menu_list != NULL) lv_obj_clear_flag(ui_menu_list, LV_OBJ_FLAG_HIDDEN);
 }
 
-// 2. OPEN WIFI SCANNER
 void open_wifi_scanner_cb(lv_event_t * e) {
   sysLog("Opening C++ WiFi Scanner...");
   build_wifi_scanner_ui(); 
 }
 
 // ==========================================
-// CONTROL CALLBACKS (Assigned in SquareLine Events)
+// CONTROL CALLBACKS 
 // ==========================================
 
-// NOTE: You must assign these function names to your UI widgets in SquareLine!
 void temp_range_slider_cb(lv_event_t * e) {
   lv_obj_t * slider = lv_event_get_target(e);
   lv_event_code_t code = lv_event_get_code(e);
@@ -263,20 +251,16 @@ void hum_range_slider_cb(lv_event_t * e) {
 void dark_mode_switch_cb(lv_event_t * e) {
   lv_obj_t * sw = lv_event_get_target(e);
   isDarkMode = lv_obj_has_state(sw, LV_STATE_CHECKED);
-  // (In SquareLine, it is better to handle theme changes via the built-in Theme manager, but this keeps your variable synced)
   triggerCloudPush = true;
 }
 
 // ==========================================
-// WIFI & TIME PICKER UI (Custom C++ Overlays)
+// WIFI & TIME PICKER UI 
 // ==========================================
 
 void build_wifi_scanner_ui() {
   if(wifi_list != NULL) { lv_obj_del(wifi_list); wifi_list = NULL; }
-  
-  // Hide SquareLine UI while scanning
   if(tabview != NULL) lv_obj_add_flag(tabview, LV_OBJ_FLAG_HIDDEN);
-
   if(CloudTaskHandle != NULL) vTaskSuspend(CloudTaskHandle); 
 
   Serial.println("Scanning...");
@@ -299,14 +283,12 @@ void build_wifi_scanner_ui() {
     lv_list_add_btn(wifi_list, LV_SYMBOL_REFRESH, "No Networks Found.");
   } else {
     for (int i = 0; i < n; ++i) {
-      // Basic implementation for scanning list
       lv_list_add_btn(wifi_list, LV_SYMBOL_WIFI, WiFi.SSID(i).c_str());
     }
   }
 }
 
 void build_time_picker_modal() {
-  // Keeping your original time picker logic intact.
   time_picker_bg = lv_obj_create(lv_scr_act());
   lv_obj_set_size(time_picker_bg, 320, 240);
   lv_obj_center(time_picker_bg);
@@ -339,7 +321,6 @@ void update_ui_from_data() {
   uiNeedsUpdate = false;
   char buf[64];
 
-  // 1. Update Dashboard Labels (Ensure these are named ui_temp_label etc. in SquareLine)
   if(ui_temp_label) {
     snprintf(buf, sizeof(buf), "Temp: %.1f \xb0%s", liveTemp, useFahrenheit ? "F" : "C");
     lv_label_set_text(ui_temp_label, buf);
@@ -358,7 +339,6 @@ void update_ui_from_data() {
     }
   }
 
-  // 2. Update Environment Sliders
   if(temp_slider) {
     lv_slider_set_left_value(temp_slider, useFahrenheit ? tempLow : (tempLow - 32.0) * 5.0 / 9.0, LV_ANIM_OFF);
     lv_slider_set_value(temp_slider, useFahrenheit ? tempHigh : (tempHigh - 32.0) * 5.0 / 9.0, LV_ANIM_OFF);
@@ -372,7 +352,6 @@ void update_ui_from_data() {
     if(hum_slider_label) lv_label_set_text(hum_slider_label, buf);
   }
 
-  // 3. Update Switches
   if(timer_sw) {
     if(timerEnabled) lv_obj_add_state(timer_sw, LV_STATE_CHECKED);
     else lv_obj_clear_state(timer_sw, LV_STATE_CHECKED);
@@ -383,14 +362,11 @@ void update_ui_from_data() {
   }
 }
 
-// ... (Keep your syncWithCloudSilent, checkSerialSensors, and evaluateControlLogic here EXACTLY as they were) ...
-
 void uiLoopTask(void * parameter) {
   for(;;) {
     lv_timer_handler();
     if(uiNeedsUpdate) update_ui_from_data();
     
-    // Periodically flag the UI to update the live dashboard data
     static unsigned long lastUpdate = 0;
     if(millis() - lastUpdate > 1000) {
         lastUpdate = millis();
@@ -408,27 +384,23 @@ void setup() {
   Serial.begin(115200);
   Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
 
-  // 1. FORCE BACKLIGHT ON (Bypass PWM for now)
-  pinMode(TFT_BL, OUTPUT);
-  digitalWrite(TFT_BL, HIGH); 
-
-  // 2. INIT SCREEN
+  // 1. INIT SCREEN
   tft.begin();
   tft.setRotation(1);
   tft.setSwapBytes(true); 
   
-  // 3. THE RED SCREEN TEST
+  // 2. THE RED SCREEN TEST
   tft.fillScreen(TFT_RED); 
   delay(2000); // Show Red for 2 seconds so you know SPI is working!
   tft.fillScreen(TFT_BLACK);
 
-  // 4. TEMPORARILY DISABLE CALIBRATION
-  // touch_calibrate(); 
-
-  // --- Initialize LVGL v8 ---
+// --- Initialize LVGL v8 ---
   lv_init();
-  lv_disp_draw_buf_init(&draw_buf, buf, NULL, screenWidth * 10);
+  
+  // Grab the memory from the 8MB PSRAM safely at runtime
+  buf = (lv_color_t *)ps_malloc(screenWidth * 40 * sizeof(lv_color_t));
 
+  lv_disp_draw_buf_init(&draw_buf, buf, NULL, screenWidth * 40);
   static lv_disp_drv_t disp_drv;
   lv_disp_drv_init(&disp_drv);
   disp_drv.hor_res = screenWidth;
@@ -462,7 +434,5 @@ void setup() {
 }
 
 void loop() {
-  // checkSerialSensors();
-  // evaluateControlLogic();
   delay(10); 
 }
