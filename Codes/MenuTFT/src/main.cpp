@@ -23,6 +23,7 @@ RTC_DATA_ATTR uint8_t rtc_channel;
 
 // --- GLOBALS FOR DISPLAY (LVGL v8.3) ---
 static lv_disp_draw_buf_t draw_buf;
+static lv_color_t *buf; // Pointer for PSRAM allocation
 
 // --- UI POINTERS (Mapped to SquareLine in setup) ---
 lv_obj_t * tabview;
@@ -59,9 +60,9 @@ void build_wifi_scanner_ui();
 void open_time_picker(bool isOnTime);
 
 // --- PIN DEFINITIONS ---
-// PIN 38 REMOVED to protect PSRAM
 #define TOUCH_IRQ  1  
 #define SD_CS      5
+// #define TFT_BL  38  // REMOVED: Pin 38 is reserved for PSRAM on N16R8
 
 #ifndef RXD2
 #define RXD2 16
@@ -70,7 +71,7 @@ void open_time_picker(bool isOnTime);
 #define TXD2 17
 #endif
 
-// Backlight PWM Settings
+// Backlight PWM Settings (Disabled for initial test)
 const int pwmFreq = 5000;
 const int pwmResolution = 8;
 const int pwmChannel = 0;
@@ -81,9 +82,6 @@ TFT_eSPI tft = TFT_eSPI();
 // 1. Update Resolution
 static const uint16_t screenWidth  = 480; 
 static const uint16_t screenHeight = 320;
-
-// 2. Increase the buffer size (S3 has plenty of RAM)
-static lv_color_t *buf;
 
 // --- SYSTEM GLOBALS ---
 float liveTemp = 0.0, liveHum = 0.0, liveLux = 0.0;
@@ -137,15 +135,12 @@ void sysLog(String msg) {
 // CALIBRATION ROUTINE
 // ==========================================
 void touch_calibrate() {
-  // Completely bypassed for screen testing to prevent compiler errors
-  return; 
-  
-  /* --- TOUCH CODE HIDDEN FROM COMPILER ---
+  return; // BYPASS FOR NOW
+
   uint16_t calibrationData[5];
   uint8_t calDataOK = 0;
 
   if (!SPIFFS.begin()) {
-    Serial.println("Formatting SPIFFS...");
     SPIFFS.format();
     SPIFFS.begin();
   }
@@ -159,7 +154,7 @@ void touch_calibrate() {
   }
 
   if (calDataOK) {
-    tft.setTouch(calibrationData);
+    // tft.setTouch(calibrationData); // COMMENTED TO STOP ERRORS
   } else {
     tft.fillScreen(TFT_BLACK);
     tft.setCursor(20, 0);
@@ -167,7 +162,7 @@ void touch_calibrate() {
     tft.setTextSize(1);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.println("Touch corners as indicated");
-    tft.calibrateTouch(calibrationData, TFT_MAGENTA, TFT_BLACK, 15);
+    // tft.calibrateTouch(calibrationData, TFT_MAGENTA, TFT_BLACK, 15); // COMMENTED TO STOP ERRORS
     tft.setTextColor(TFT_GREEN, TFT_BLACK);
     tft.println("Calibration complete!");
     File f = SPIFFS.open("/TouchCalData", "w");
@@ -176,7 +171,6 @@ void touch_calibrate() {
       f.close();
     }
   }
-  ---------------------------------------- */
 }
 
 // ==========================================
@@ -187,7 +181,7 @@ void IRAM_ATTR handleTouchInterrupt() {
 }
 
 void setBacklight(int brightness) {
-  ledcWrite(pwmChannel, brightness); 
+  // ledcWrite(pwmChannel, brightness); 
 }
 
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
@@ -198,8 +192,17 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
 }
 
 void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data) {
-  // Forced bypass so it compiles without tft.getTouch
-  data->state = LV_INDEV_STATE_REL;
+  uint16_t touchX, touchY;
+  // bool touched = tft.getTouch(&touchX, &touchY); // COMMENTED TO STOP ERRORS
+  bool touched = false;
+
+  if (touched) {
+    data->point.x = touchX;
+    data->point.y = touchY;
+    data->state = LV_INDEV_STATE_PR;
+  } else {
+    data->state = LV_INDEV_STATE_REL;
+  }
 }
 
 // ==========================================
@@ -221,7 +224,7 @@ void open_wifi_scanner_cb(lv_event_t * e) {
 }
 
 // ==========================================
-// CONTROL CALLBACKS 
+// CONTROL CALLBACKS
 // ==========================================
 
 void temp_range_slider_cb(lv_event_t * e) {
@@ -262,10 +265,8 @@ void build_wifi_scanner_ui() {
   if(wifi_list != NULL) { lv_obj_del(wifi_list); wifi_list = NULL; }
   if(tabview != NULL) lv_obj_add_flag(tabview, LV_OBJ_FLAG_HIDDEN);
   if(CloudTaskHandle != NULL) vTaskSuspend(CloudTaskHandle); 
-
   Serial.println("Scanning...");
   int n = WiFi.scanNetworks(false, true); 
-
   if(CloudTaskHandle != NULL) vTaskResume(CloudTaskHandle);
 
   wifi_list = lv_list_create(lv_scr_act());
@@ -319,15 +320,15 @@ void build_time_picker_modal() {
 void update_ui_from_data() {
   if(!uiNeedsUpdate) return;
   uiNeedsUpdate = false;
-  char buf[64];
+  char buf_txt[64];
 
   if(ui_temp_label) {
-    snprintf(buf, sizeof(buf), "Temp: %.1f \xb0%s", liveTemp, useFahrenheit ? "F" : "C");
-    lv_label_set_text(ui_temp_label, buf);
+    snprintf(buf_txt, sizeof(buf_txt), "Temp: %.1f \xb0%s", liveTemp, useFahrenheit ? "F" : "C");
+    lv_label_set_text(ui_temp_label, buf_txt);
   }
   if(ui_hum_label) {
-    snprintf(buf, sizeof(buf), "Humidity: %.0f %%", liveHum);
-    lv_label_set_text(ui_hum_label, buf);
+    snprintf(buf_txt, sizeof(buf_txt), "Humidity: %.0f %%", liveHum);
+    lv_label_set_text(ui_hum_label, buf_txt);
   }
   if(ui_wifistatuslabel) {
     if(WiFi.status() == WL_CONNECTED) {
@@ -342,14 +343,14 @@ void update_ui_from_data() {
   if(temp_slider) {
     lv_slider_set_left_value(temp_slider, useFahrenheit ? tempLow : (tempLow - 32.0) * 5.0 / 9.0, LV_ANIM_OFF);
     lv_slider_set_value(temp_slider, useFahrenheit ? tempHigh : (tempHigh - 32.0) * 5.0 / 9.0, LV_ANIM_OFF);
-    snprintf(buf, sizeof(buf), "Temp: %.1f - %.1f \xb0%s", tempLow, tempHigh, useFahrenheit ? "F" : "C");
-    if(temp_slider_label) lv_label_set_text(temp_slider_label, buf);
+    snprintf(buf_txt, sizeof(buf_txt), "Temp: %.1f - %.1f \xb0%s", tempLow, tempHigh, useFahrenheit ? "F" : "C");
+    if(temp_slider_label) lv_label_set_text(temp_slider_label, buf_txt);
   }
   if(hum_slider) {
     lv_slider_set_left_value(hum_slider, humLow, LV_ANIM_OFF);
     lv_slider_set_value(hum_slider, humHigh, LV_ANIM_OFF);
-    snprintf(buf, sizeof(buf), "Humidity: %.0f - %.0f %%", humLow, humHigh);
-    if(hum_slider_label) lv_label_set_text(hum_slider_label, buf);
+    snprintf(buf_txt, sizeof(buf_txt), "Humidity: %.0f - %.0f %%", humLow, humHigh);
+    if(hum_slider_label) lv_label_set_text(hum_slider_label, buf_txt);
   }
 
   if(timer_sw) {
@@ -391,16 +392,21 @@ void setup() {
   
   // 2. THE RED SCREEN TEST
   tft.fillScreen(TFT_RED); 
-  delay(2000); // Show Red for 2 seconds so you know SPI is working!
+  delay(1000); 
   tft.fillScreen(TFT_BLACK);
 
-// --- Initialize LVGL v8 ---
+  // --- Initialize LVGL v8 ---
   lv_init();
-  
-  // Grab the memory from the 8MB PSRAM safely at runtime
+
+  // PSRAM ALLOCATION (Fixes DRAM Overflow Error)
   buf = (lv_color_t *)ps_malloc(screenWidth * 40 * sizeof(lv_color_t));
+  if (buf == NULL) {
+      Serial.println("PSRAM Allocation Failed!");
+      while(1) yield();
+  }
 
   lv_disp_draw_buf_init(&draw_buf, buf, NULL, screenWidth * 40);
+
   static lv_disp_drv_t disp_drv;
   lv_disp_drv_init(&disp_drv);
   disp_drv.hor_res = screenWidth;
