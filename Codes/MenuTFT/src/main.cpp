@@ -191,18 +191,23 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
   lv_disp_flush_ready(disp);
 }
 
-void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data) {
-  uint16_t touchX, touchY;
-  // bool touched = tft.getTouch(&touchX, &touchY); // COMMENTED TO STOP ERRORS
-  bool touched = false;
+/* Read the touchpad for LVGL */
+void my_touchpad_read(lv_indev_drv_t * indev_driver, lv_indev_data_t * data)
+{
+    uint16_t touchX = 0, touchY = 0;
 
-  if (touched) {
-    data->point.x = touchX;
-    data->point.y = touchY;
-    data->state = LV_INDEV_STATE_PR;
-  } else {
-    data->state = LV_INDEV_STATE_REL;
-  }
+    // Check if the screen is being touched
+    bool touched = tft.getTouch(&touchX, &touchY);
+
+    if (!touched) {
+        data->state = LV_INDEV_STATE_REL; // Released
+    } else {
+        data->state = LV_INDEV_STATE_PR;  // Pressed
+        
+        // Pass the coordinates to LVGL
+        data->point.x = touchX;
+        data->point.y = touchY;
+    }
 }
 
 // ==========================================
@@ -385,10 +390,14 @@ void setup() {
   Serial.begin(115200);
   Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
 
-  // 1. INIT SCREEN
+// 1. INIT SCREEN & TOUCH
   tft.begin();
-  tft.setRotation(1);
+  tft.setRotation(1); // Landscape
   tft.setSwapBytes(true); 
+  
+  // Apply your unique touch settings
+  uint16_t calData[5] = { 260, 3657, 273, 3580, 7 };
+  tft.setTouch(calData);
   
   // 2. THE RED SCREEN TEST
   tft.fillScreen(TFT_RED); 
