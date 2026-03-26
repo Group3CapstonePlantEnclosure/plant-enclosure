@@ -20,12 +20,12 @@
 
 /* Font Usage - Standard SquareLine Fonts */
 // Enable these so SquareLine text actually shows up
-#define LV_FONT_MONTSERRAT_10 0
-#define LV_FONT_MONTSERRAT_12 0
+#define LV_FONT_MONTSERRAT_10 1
+#define LV_FONT_MONTSERRAT_12 1
 #define LV_FONT_MONTSERRAT_14 1
-#define LV_FONT_MONTSERRAT_16 0
-#define LV_FONT_MONTSERRAT_18 0
-#define LV_FONT_MONTSERRAT_20 0
+#define LV_FONT_MONTSERRAT_16 1
+#define LV_FONT_MONTSERRAT_18 1
+#define LV_FONT_MONTSERRAT_20 1
 
 /* Other Features */
 #define LV_USE_LOG 1        // Set to 1 if you need to debug LVGL errors in Serial
