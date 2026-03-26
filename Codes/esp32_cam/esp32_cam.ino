@@ -9,10 +9,10 @@
 // ===========================
 // 1. Credentials & Cloud
 // ===========================
-//const char* ssid = "MASCU-Fi";
-//const char* password = "milliondollarbackyard@1192";
-const char* ssid = "shanel";
-const char* password = "jamescharles";
+const char* ssid = "MASCU-Fi";
+const char* password = "milliondollarbackyard@1192";
+//const char* ssid = "shanel";
+//const char* password = "jamescharles";
 // Removed trailing slash for cleaner URL building
 const char* FIREBASE_DB_URL = "https://plant-enclosure-default-rtdb.firebaseio.com";
 
