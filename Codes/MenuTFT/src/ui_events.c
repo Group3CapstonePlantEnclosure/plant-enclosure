@@ -3,18 +3,10 @@
 // LVGL version: 8.3.11
 // Project name: Corn Squareline
 
-
-void open_wifi_scanner_cb(lv_event_t * e)
-{
-	// Your code here
-}
+#include "ui_events.h"
 
 void Moisture_range_slider_changed(lv_event_t * e)
 {
-	// Your code here
-}
-
-void global_back_cb(lv_event_t * e)
-{
-	// Your code here
+    (void)e;
+    // Your code here
 }

@@ -10,6 +10,8 @@
 extern "C" {
 #endif
 
+#include <lvgl.h>
+
 void open_wifi_scanner_cb(lv_event_t * e);
 void Moisture_range_slider_changed(lv_event_t * e);
 void global_back_cb(lv_event_t * e);

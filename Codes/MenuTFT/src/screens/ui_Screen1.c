@@ -365,30 +365,6 @@ void ui_Screen1_screen_init(void)
     lv_obj_clear_flag(ui_Humidity_Icon, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
     lv_img_set_zoom(ui_Humidity_Icon, 10);
 
-    ui_Lower_Limit = lv_label_create(ui_env_page);
-    lv_obj_set_width(ui_Lower_Limit, LV_SIZE_CONTENT);   /// 1
-    lv_obj_set_height(ui_Lower_Limit, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_Lower_Limit, 170);
-    lv_obj_set_y(ui_Lower_Limit, -99);
-    lv_obj_set_align(ui_Lower_Limit, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_Lower_Limit, "Lower Limit");
-
-    ui_Upper_Limit = lv_label_create(ui_env_page);
-    lv_obj_set_width(ui_Upper_Limit, LV_SIZE_CONTENT);   /// 1
-    lv_obj_set_height(ui_Upper_Limit, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_Upper_Limit, -170);
-    lv_obj_set_y(ui_Upper_Limit, -99);
-    lv_obj_set_align(ui_Upper_Limit, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_Upper_Limit, "Upper Limit");
-
-    ui_LowerMoistLimit = lv_label_create(ui_env_page);
-    lv_obj_set_width(ui_LowerMoistLimit, LV_SIZE_CONTENT);   /// 1
-    lv_obj_set_height(ui_LowerMoistLimit, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_LowerMoistLimit, 115);
-    lv_obj_set_y(ui_LowerMoistLimit, -50);
-    lv_obj_set_align(ui_LowerMoistLimit, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_LowerMoistLimit, "0%");
-
     ui_lighting_page = lv_obj_create(ui_Menu);
     lv_obj_remove_style_all(ui_lighting_page);
     lv_obj_set_width(ui_lighting_page, lv_pct(100));
