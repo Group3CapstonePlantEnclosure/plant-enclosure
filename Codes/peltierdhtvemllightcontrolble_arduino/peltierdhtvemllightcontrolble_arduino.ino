@@ -20,7 +20,7 @@ int level = 3;
 bool ledOn = false;
 
 int pwmForLevel(int lvl) {
-  if (lvl == 1) return 25;2
+  if (lvl == 1) return 25;
   if (lvl == 2) return 100;
   return 255;
 }
@@ -139,9 +139,8 @@ unsigned long lastUpdate = 0;
 const long updateInterval = 10000;
 
 void setup() {
-
   Serial.begin(115200);
-  COMM_SERIAL.begin(115200);
+  COMM_SERIAL.begin(115200); // Using hardware Serial1 on the R4!
 
   pinMode(PELTIER_IN1, OUTPUT);
   pinMode(PELTIER_IN2, OUTPUT);
@@ -149,20 +148,35 @@ void setup() {
 
   applyPwm(0);
 
-  if (sht4.begin()) {
+  // Initialize the secondary I2C bus for the Qwiic connector
+  Wire1.begin(); 
+
+  // Tell the SHT4x library to use Wire1 instead of the default Wire
+  if (sht4.begin(&Wire1)) {
     sht4_found = true;
     sht4.setHeater(SHT4X_NO_HEATER);
+    Serial.println("SUCCESS: SHT41 Found on Qwiic (Wire1)!");
+  } else {
+    Serial.println("ERROR: SHT41 NOT found. Check Qwiic connection.");
   }
 
+  // Initialize the primary I2C bus for standard pins
+  Wire.begin();
+
+  // If your VEML7700 is wired to pins A4/A5, use veml.begin()
+  // NOTE: If you daisy-chained the VEML7700 to the Qwiic connector instead, 
+  // you must change this to: veml.begin(&Wire1)
   if (veml.begin()) {
     veml_found = true;
+    Serial.println("SUCCESS: VEML7700 Found!");
+  } else {
+    Serial.println("ERROR: VEML7700 NOT found. Check wiring.");
   }
 
   Serial.println("System Online.");
 }
 
 void loop() {
-
   unsigned long currentMillis = millis();
 
   // Handle PC serial commands
@@ -251,7 +265,6 @@ void processESP32Command(String cmd) {
   }
 
   else if (cmd.startsWith("CMD:LIGHT,")) {
-
     int pwmValue = cmd.substring(10).toInt();
     analogWrite(LIGHT_PWM_PIN, pwmValue);
   }
@@ -263,9 +276,7 @@ void sendSensorData(float lux) {
   float h = 0.0;
 
   if (sht4_found) {
-
     sensors_event_t humidity, temp;
-
     sht4.getEvent(&humidity, &temp);
 
     t = ((temp.temperature * 1.8) + 32.0) + tempOffset;
