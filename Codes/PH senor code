@@ -1,4 +1,5 @@
 // set to 9600 baud on serial monitor for correct output
+// V+ 5V pin, G GND pin, Po A0 pin
 const int phPin = A0;          // The analog pin connected to Po
 float calibrationOffset = 0.0; // Adjust this value to calibrate the sensor
 
