@@ -79,6 +79,8 @@ bool push_settings_to_firebase();
 void load_settings_from_firebase();
 void cloudTask(void * parameter);
 void checkSerialSensors();
+void updateClock();
+void evaluateControlLogic();
 void fix_layout_for_display();
 
 // --- PIN DEFINITIONS ---
@@ -120,7 +122,9 @@ int currentHour = 12, currentMinute = 0, globalBrightness = 10;
 int timeZoneOffset = -5; 
 
 String webLogBuffer = "Device Booted. System initialized.\n";
-unsigned long lastMinuteTick = 0, lastSerialRecv = 0;
+unsigned long lastMinuteTick = 0, lastSerialRecv = 0, lastControlCheck = 0;
+String lastPeltierCommand = "";
+int lastLightPwm = -1;
 
 volatile bool triggerCloudPush = false;
 volatile bool uiNeedsUpdate = false; 
@@ -237,6 +241,8 @@ bool connect_to_wifi(const char *ssid, const char *password, bool useFastReconne
       rtc_channel = WiFi.channel();
       rtc_bssid_valid = 1;
     }
+    configTime(timeZoneOffset * 3600, 0, "pool.ntp.org", "time.nist.gov");
+    lastMinuteTick = 0;
     sysLog("WiFi connected. IP: " + WiFi.localIP().toString());
     if(conn_status_label) lv_label_set_text(conn_status_label, "Connected successfully.");
     uiNeedsUpdate = true;
@@ -991,6 +997,68 @@ static bool parseTaggedFloat(const String &data, const char *tag, float &outValu
   return true;
 }
 
+void updateClock() {
+  const bool firstTick = (lastMinuteTick == 0);
+  if(!firstTick && millis() - lastMinuteTick < 60000UL) return;
+
+  lastMinuteTick = millis();
+
+  if(WiFi.status() == WL_CONNECTED) {
+    struct tm timeinfo;
+    if(getLocalTime(&timeinfo, 10)) {
+      currentHour = timeinfo.tm_hour;
+      currentMinute = timeinfo.tm_min;
+      return;
+    }
+  }
+
+  if(firstTick) return;
+
+  currentMinute++;
+  if(currentMinute > 59) {
+    currentMinute = 0;
+    currentHour = (currentHour + 1) % 24;
+  }
+}
+
+void evaluateControlLogic() {
+  if(lastSerialRecv == 0 || millis() - lastSerialRecv > 15000UL) return;
+  if(millis() - lastControlCheck < 5000UL) return;
+
+  lastControlCheck = millis();
+
+  const char *peltierCmd = "CMD:PELTIER_OFF";
+  if(liveTemp > tempHigh) peltierCmd = "CMD:COOL";
+  else if(liveTemp < tempLow) peltierCmd = "CMD:HEAT";
+
+  if(lastPeltierCommand != String(peltierCmd)) {
+    lastPeltierCommand = String(peltierCmd);
+    sysLog("Arduino control -> " + lastPeltierCommand);
+  }
+  Serial2.println(peltierCmd);
+
+  bool turnLightOn = (liveLux < luxThreshold);
+  if(timerEnabled) {
+    int nowMins = (currentHour * 60) + currentMinute;
+    int onMins = (timeOnHour * 60) + timeOnMinute;
+    int offMins = (timeOffHour * 60) + timeOffMinute;
+
+    bool insideSchedule = false;
+    if(onMins < offMins) insideSchedule = (nowMins >= onMins && nowMins < offMins);
+    else insideSchedule = (nowMins >= onMins || nowMins < offMins);
+
+    if(!insideSchedule) turnLightOn = false;
+  }
+
+  int pwmVal = turnLightOn ? map(globalBrightness, 1, 10, 25, 255) : 0;
+  if(pwmVal != lastLightPwm) {
+    lastLightPwm = pwmVal;
+    sysLog("Arduino light PWM -> " + String(pwmVal));
+  }
+  Serial2.print("CMD:LIGHT,");
+  Serial2.println(pwmVal);
+}
+
 void checkSerialSensors() {
   while(Serial2.available()) {
     String data = Serial2.readStringUntil('\n');
@@ -1151,5 +1219,7 @@ void setup() {
 
 void loop() {
   checkSerialSensors();
+  updateClock();
+  evaluateControlLogic();
   delay(10); 
 }
