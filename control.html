@@ -304,10 +304,11 @@
                 preview.src = URL.createObjectURL(blob);
                 preview.style.display = "block";
 
-                status.textContent = "🧠 Identifying species...";
+               status.textContent = "🧠 Identifying species...";
                 const formData = new FormData();
-                formData.append('images', blob);
-                formData.append('organs', 'leaf');
+                // ADD 'capture.jpg' right here so PlantNet knows it's an image file
+                formData.append('images', blob, 'capture.jpg'); 
+                formData.append('organs', 'auto'); // 'auto' is usually better than forcing 'leaf'
 
                 const idRes = await fetch(`https://my-api.plantnet.org/v2/identify/all?api-key=${PLANTNET_KEY}`, {
                     method: 'POST',
