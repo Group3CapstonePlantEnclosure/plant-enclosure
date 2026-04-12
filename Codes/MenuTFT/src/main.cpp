@@ -76,6 +76,7 @@ void save_wifi_credentials(const char *ssid, const char *password);
 bool connect_to_wifi(const char *ssid, const char *password, bool useFastReconnect);
 bool patch_firebase_payload(const String &payload);
 bool push_settings_to_firebase();
+bool push_live_values_to_firebase();
 void load_settings_from_firebase();
 void cloudTask(void * parameter);
 void checkSerialSensors();
@@ -281,9 +282,8 @@ bool push_settings_to_firebase() {
 
   const float tempLowCloud = useFahrenheit ? tempLow : ((tempLow * 9.0f / 5.0f) + 32.0f);
   const float tempHighCloud = useFahrenheit ? tempHigh : ((tempHigh * 9.0f / 5.0f) + 32.0f);
-  const float liveTempCloud = useFahrenheit ? liveTemp : ((liveTemp * 9.0f / 5.0f) + 32.0f);
 
-  DynamicJsonDocument doc(3072);
+  DynamicJsonDocument doc(2048);
   doc["tempLow"] = tempLowCloud;
   doc["tempHigh"] = tempHighCloud;
   doc["humLow"] = humLow;
@@ -301,14 +301,6 @@ bool push_settings_to_firebase() {
   doc["timeOffMin"] = timeOffMinute;
   doc["globalBrightness"] = globalBrightness;
   doc["timeZoneOffset"] = timeZoneOffset;
-  doc["liveTemp"] = liveTempCloud;
-  doc["currentTemp"] = liveTempCloud;
-  doc["liveHum"] = liveHum;
-  doc["currentHumidity"] = liveHum;
-  doc["liveSoil"] = liveSoil;
-  doc["soilMoisture"] = liveSoil;
-  doc["liveLux"] = liveLux;
-  doc["currentLux"] = liveLux;
 
   String payload;
   serializeJson(doc, payload);
@@ -332,6 +324,33 @@ bool push_settings_to_firebase() {
   }
 
   sysLog("Firebase PATCH failed with code " + String(httpCode));
+  return false;
+}
+
+bool push_live_values_to_firebase() {
+  if(WiFi.status() != WL_CONNECTED) return false;
+  if(lastSerialRecv == 0 || millis() - lastSerialRecv > 30000UL) return false;
+
+  const float liveTempCloud = useFahrenheit ? liveTemp : ((liveTemp * 9.0f / 5.0f) + 32.0f);
+
+  DynamicJsonDocument doc(512);
+  doc["liveTemp"] = liveTempCloud;
+  doc["currentTemp"] = liveTempCloud;
+  doc["liveHum"] = liveHum;
+  doc["currentHumidity"] = liveHum;
+  doc["liveSoil"] = liveSoil;
+  doc["soilMoisture"] = liveSoil;
+  doc["liveLux"] = liveLux;
+  doc["currentLux"] = liveLux;
+
+  String payload;
+  serializeJson(doc, payload);
+
+  if(patch_firebase_payload(payload)) {
+    return true;
+  }
+
+  sysLog("Live sensor upload failed.");
   return false;
 }
 
@@ -474,24 +493,7 @@ void load_settings_from_firebase() {
   if(!doc["luxThreshold"].isNull() && fabsf(doc["luxThreshold"].as<float>() - luxThreshold) > 0.5f) { luxThreshold = doc["luxThreshold"].as<float>(); changed = true; }
   else if(!doc["lighting"]["luxThreshold"].isNull() && fabsf(doc["lighting"]["luxThreshold"].as<float>() - luxThreshold) > 0.5f) { luxThreshold = doc["lighting"]["luxThreshold"].as<float>(); changed = true; }
 
-  if(!doc["liveTemp"].isNull()) {
-    float v = doc["liveTemp"].as<float>();
-    float newVal = useFahrenheit ? v : ((v - 32.0f) * 5.0f / 9.0f);
-    if(fabsf(newVal - liveTemp) > 0.05f) { liveTemp = newVal; changed = true; }
-  } else if(!doc["currentTemp"].isNull()) {
-    float v = doc["currentTemp"].as<float>();
-    float newVal = useFahrenheit ? v : ((v - 32.0f) * 5.0f / 9.0f);
-    if(fabsf(newVal - liveTemp) > 0.05f) { liveTemp = newVal; changed = true; }
-  }
-
-  if(!doc["liveHum"].isNull() && fabsf(doc["liveHum"].as<float>() - liveHum) > 0.05f) { liveHum = doc["liveHum"].as<float>(); changed = true; }
-  else if(!doc["currentHumidity"].isNull() && fabsf(doc["currentHumidity"].as<float>() - liveHum) > 0.05f) { liveHum = doc["currentHumidity"].as<float>(); changed = true; }
-
-  if(!doc["liveSoil"].isNull() && fabsf(doc["liveSoil"].as<float>() - liveSoil) > 0.05f) { liveSoil = doc["liveSoil"].as<float>(); changed = true; }
-  else if(!doc["soilMoisture"].isNull() && fabsf(doc["soilMoisture"].as<float>() - liveSoil) > 0.05f) { liveSoil = doc["soilMoisture"].as<float>(); changed = true; }
-
-  if(!doc["liveLux"].isNull() && fabsf(doc["liveLux"].as<float>() - liveLux) > 0.5f) { liveLux = doc["liveLux"].as<float>(); changed = true; }
-  else if(!doc["currentLux"].isNull() && fabsf(doc["currentLux"].as<float>() - liveLux) > 0.5f) { liveLux = doc["currentLux"].as<float>(); changed = true; }
+  // Live UART sensor values are source-of-truth on ESP32 and should not be overwritten from cloud sync.
 
   if(changed) {
     sysLog("Cloud settings synced to device.");
@@ -500,7 +502,8 @@ void load_settings_from_firebase() {
 }
 
 void cloudTask(void * parameter) {
-  unsigned long lastSyncMs = 0;
+  unsigned long lastSettingsSyncMs = 0;
+  unsigned long lastLiveUploadMs = 0;
   (void)parameter;
 
   for(;;) {
@@ -517,14 +520,18 @@ void cloudTask(void * parameter) {
       if(triggerCloudPush) {
         if(push_settings_to_firebase()) {
           triggerCloudPush = false;
-          lastSyncMs = millis();
+          lastSettingsSyncMs = millis();
         }
       }
 
-      if(millis() - lastSyncMs >= 5000UL) {
+      if(millis() - lastSettingsSyncMs >= 10000UL) {
         load_settings_from_firebase();
-        push_settings_to_firebase();
-        lastSyncMs = millis();
+        lastSettingsSyncMs = millis();
+      }
+
+      if(millis() - lastLiveUploadMs >= 10000UL) {
+        push_live_values_to_firebase();
+        lastLiveUploadMs = millis();
       }
     }
 
@@ -1113,6 +1120,7 @@ void uiLoopTask(void * parameter) {
 void setup() {
   Serial.begin(115200);
   Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
+  Serial2.setTimeout(25);
 
 // 1. INIT SCREEN & TOUCH
   tft.begin();
