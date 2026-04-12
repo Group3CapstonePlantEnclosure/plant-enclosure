@@ -953,6 +953,28 @@ void update_ui_from_data() {
     snprintf(buf_txt, sizeof(buf_txt), "Light: %.0f lux", liveLux);
     lv_label_set_text(ui_lux_label, buf_txt);
   }
+
+  // UART status indicator on dashboard
+  static lv_obj_t * uart_status_label = NULL;
+  if(uart_status_label == NULL && ui_Dashboard != NULL) {
+    uart_status_label = lv_label_create(ui_Dashboard);
+    lv_obj_align(uart_status_label, LV_ALIGN_BOTTOM_LEFT, 5, -5);
+  }
+  if(uart_status_label) {
+    if(lastSerialRecv == 0) {
+      lv_label_set_text(uart_status_label, "UART: No Data");
+      lv_obj_set_style_text_color(uart_status_label, lv_color_hex(0xFF0000), 0);
+    } else if(millis() - lastSerialRecv > 15000UL) {
+      snprintf(buf_txt, sizeof(buf_txt), "UART: Stale (%lus ago)", (millis() - lastSerialRecv) / 1000UL);
+      lv_label_set_text(uart_status_label, buf_txt);
+      lv_obj_set_style_text_color(uart_status_label, lv_color_hex(0xFFA500), 0);
+    } else {
+      snprintf(buf_txt, sizeof(buf_txt), "UART: OK (%lus ago)", (millis() - lastSerialRecv) / 1000UL);
+      lv_label_set_text(uart_status_label, buf_txt);
+      lv_obj_set_style_text_color(uart_status_label, lv_color_hex(0x00FF00), 0);
+    }
+  }
+
   if(ui_wifistatuslabel) {
     if(WiFi.status() == WL_CONNECTED) {
       lv_label_set_text(ui_wifistatuslabel, LV_SYMBOL_WIFI);
@@ -1072,29 +1094,38 @@ void checkSerialSensors() {
     data.trim();
     if(data.length() == 0) continue;
 
+    Serial.print("[UART RX] ");
+    Serial.println(data);
+
     bool changed = false;
     float value = 0.0f;
 
     if(parseTaggedFloat(data, "T:", value)) {
       liveTemp = useFahrenheit ? value : ((value - 32.0f) * 5.0f / 9.0f);
+      Serial.print("  -> liveTemp = "); Serial.println(liveTemp);
       changed = true;
     }
     if(parseTaggedFloat(data, "H:", value)) {
       liveHum = value;
+      Serial.print("  -> liveHum = "); Serial.println(liveHum);
       changed = true;
     }
     if(parseTaggedFloat(data, "L:", value)) {
       liveLux = value;
+      Serial.print("  -> liveLux = "); Serial.println(liveLux);
       changed = true;
     }
     if(parseTaggedFloat(data, "S:", value) || parseTaggedFloat(data, "M:", value)) {
       liveSoil = value;
+      Serial.print("  -> liveSoil = "); Serial.println(liveSoil);
       changed = true;
     }
 
     if(changed) {
       lastSerialRecv = millis();
       uiNeedsUpdate = true;
+    } else {
+      Serial.println("  -> No tags matched!");
     }
   }
 }
