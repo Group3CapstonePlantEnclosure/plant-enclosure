@@ -85,12 +85,12 @@ void evaluateControlLogic();
 void fix_layout_for_display();
 
 // --- PIN DEFINITIONS ---
-#define TOUCH_IRQ  1  
+#define TOUCH_IRQ  16  
 #define SD_CS      5
 // #define TFT_BL  38  // REMOVED: Pin 38 is reserved for PSRAM on N16R8
 
 #ifndef RXD2
-#define RXD2 16
+#define RXD2 15
 #endif
 #ifndef TXD2
 #define TXD2 17
