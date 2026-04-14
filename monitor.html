@@ -86,6 +86,38 @@
         /* Pi-specific badge */
         .pi-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(195, 46, 82, 0.15); border: 1px solid rgba(195, 46, 82, 0.4); color: #e8638a; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: bold; letter-spacing: 0.5px; margin-top: 6px; }
 
+        /* Resolution & FPS pills */
+        .res-pill {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: var(--muted);
+            border-radius: 10px;
+            padding: 8px 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+            transition: 0.2s;
+            line-height: 1.4;
+        }
+        .res-pill span { font-weight: 400; font-size: 10px; opacity: 0.7; }
+        .res-pill:hover { background: rgba(255,255,255,0.1); color: white; }
+        .res-pill.active { background: rgba(255,184,79,0.15); border-color: rgba(255,184,79,0.5); color: var(--accent); }
+
+        .fps-pill {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: var(--muted);
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .fps-pill:hover { background: rgba(255,255,255,0.1); color: white; }
+        .fps-pill.active { background: rgba(255,184,79,0.15); border-color: rgba(255,184,79,0.5); color: var(--accent); }
+
         #loading { width: 100%; text-align: center; color: var(--accent); margin-top: 50px; }
 
         /* Scan quality selector */
@@ -114,6 +146,13 @@
                 <div id="camStatus">Loading Camera IP from Firebase...</div>
                 
                 <button id="streamToggleBtn" class="btn" style="margin-bottom: 10px; display: none; color: var(--accent); border-color: rgba(255, 184, 79, 0.4);">▶ Start Live Stream</button>
+
+                <!-- Stream info bar — shows current mode -->
+                <div id="streamInfoBar" style="display:none; justify-content: center; gap: 12px; margin-bottom: 8px; flex-wrap: wrap;">
+                    <span id="infoRes"  style="font-size:11px; color:var(--muted); background:rgba(255,255,255,0.06); border:1px solid var(--stroke); border-radius:20px; padding:3px 10px;">--</span>
+                    <span id="infoFps"  style="font-size:11px; color:var(--muted); background:rgba(255,255,255,0.06); border:1px solid var(--stroke); border-radius:20px; padding:3px 10px;">-- fps</span>
+                    <span id="infoMode" style="font-size:11px; color:var(--muted); background:rgba(255,255,255,0.06); border:1px solid var(--stroke); border-radius:20px; padding:3px 10px;">--</span>
+                </div>
                 <img id="videoFeed" src="" alt="Camera Stream (Paused)">
                 
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; padding: 0 5px;">
@@ -200,38 +239,45 @@
 
                     <div class="ctrl-row">
                         <span class="ctrl-label">Brightness</span>
-                        <input type="range" id="camBright" min="-2" max="2" value="0" style="width: 120px;" onchange="sendCamCmd('brightness', this.value)">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <input type="range" id="camBright" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('brightVal').textContent=this.value" onchange="sendCamCmd('brightness', this.value)">
+                            <span id="brightVal" style="font-size:12px; color:var(--accent); width:16px; text-align:right;">0</span>
+                        </div>
                     </div>
                     <div class="ctrl-row">
                         <span class="ctrl-label">Contrast</span>
-                        <input type="range" id="camContrast" min="-2" max="2" value="0" style="width: 120px;" onchange="sendCamCmd('contrast', this.value)">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <input type="range" id="camContrast" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('contrastVal').textContent=this.value" onchange="sendCamCmd('contrast', this.value)">
+                            <span id="contrastVal" style="font-size:12px; color:var(--accent); width:16px; text-align:right;">0</span>
+                        </div>
                     </div>
                     <div class="ctrl-row">
                         <span class="ctrl-label">Saturation</span>
-                        <input type="range" id="camSat" min="-2" max="2" value="0" style="width: 120px;" onchange="sendCamCmd('saturation', this.value)">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <input type="range" id="camSat" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('satVal').textContent=this.value" onchange="sendCamCmd('saturation', this.value)">
+                            <span id="satVal" style="font-size:12px; color:var(--accent); width:16px; text-align:right;">0</span>
+                        </div>
                     </div>
 
-                    <div class="ctrl-row" style="margin-top: 25px;">
-                        <span class="ctrl-label">Resolution</span>
-                        <select class="cam-select" id="camFramesize" onchange="sendCamCmd('framesize', this.value, true)">
-                            <option value="10">5MP (2592×1944)</option>
-                            <option value="9" selected>1080p (1920×1080)</option>
-                            <option value="8">720p (1280×720)</option>
-                            <option value="7">SVGA (800×600)</option>
-                            <option value="6">VGA (640×480)</option>
-                            <option value="5">CIF (400×296)</option>
-                            <option value="4">QVGA (320×240)</option>
-                        </select>
+                    <!-- Resolution + Framerate -->
+                    <div style="margin-top: 25px; margin-bottom: 20px;">
+                        <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">Resolution & Frame Rate</div>
+
+                        <!-- Resolution pills -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
+                            <button class="res-pill" data-id="10" onclick="setResolution(10)">📷 5MP<br><span>2592×1944</span></button>
+                            <button class="res-pill active" data-id="9"  onclick="setResolution(9)">1080p<br><span>1920×1080</span></button>
+                            <button class="res-pill" data-id="8"  onclick="setResolution(8)">720p<br><span>1280×720</span></button>
+                            <button class="res-pill" data-id="6"  onclick="setResolution(6)">480p<br><span>640×480</span></button>
+                        </div>
+
+                        <!-- Framerate pills — update dynamically per resolution -->
+                        <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; margin-top: 12px;">Frame Rate</div>
+                        <div id="fpsRow" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+                        <div id="fpsNote" style="font-size: 11px; color: var(--muted); margin-top: 6px; font-style: italic;"></div>
                     </div>
-                    <div class="ctrl-row">
-                        <span class="ctrl-label">Color Filter</span>
-                        <select class="cam-select" id="camEffect" onchange="sendCamCmd('special_effect', this.value)">
-                            <option value="0">Normal</option>
-                            <option value="2">Grayscale</option>
-                            <option value="4">Green Tint (Night)</option>
-                            <option value="6">Sepia</option>
-                        </select>
-                    </div>
+
+
 
                     <div class="ctrl-row" style="margin-top: 20px;">
                         <span class="ctrl-label">Vertical Flip</span>
@@ -269,7 +315,76 @@
 
     const PLANTNET_KEY = "2b1020AMM4X5X1BCCGDgAKF9O"; 
 
-    // ─── Capture Mode ─────────────────────────────────────────────────────────
+    // ─── Resolution & Framerate ───────────────────────────────────────────────
+    // Mirrors VIDEO_MODES in camera_server.py
+    const VIDEO_MODES = {
+        10: { label: "5MP",   fps: [5, 2, 1],     note: "Still mode — best for plant ID, low framerate" },
+        9:  { label: "1080p", fps: [30],           note: "1080p @ 30fps — OV5647 native" },
+        8:  { label: "720p",  fps: [60, 30],       note: "720p @ 60fps or 30fps" },
+        6:  { label: "480p",  fps: [90, 60, 30],   note: "480p — highest framerates available" },
+    };
+
+    let currentModeId = 9;
+    let currentFps    = 30;
+
+    function renderFpsPills(modeId, activeFps) {
+        const mode   = VIDEO_MODES[modeId];
+        const fpsRow = document.getElementById("fpsRow");
+        const fpsNote = document.getElementById("fpsNote");
+        fpsRow.innerHTML = "";
+        fpsNote.textContent = mode.note;
+        mode.fps.forEach(f => {
+            const btn = document.createElement("button");
+            btn.className = "fps-pill" + (f === activeFps ? " active" : "");
+            btn.textContent = `${f} fps`;
+            btn.onclick = () => setFramerate(f);
+            fpsRow.appendChild(btn);
+        });
+    }
+
+    window.setResolution = async function(modeId) {
+        const streamWasOn = isStreamRunning;
+        if (streamWasOn) stopStream();
+
+        // Update pills
+        document.querySelectorAll('.res-pill').forEach(p => p.classList.remove('active'));
+        document.querySelector(`.res-pill[data-id="${modeId}"]`).classList.add('active');
+
+        // Pick highest fps for this mode
+        const mode   = VIDEO_MODES[modeId];
+        const newFps = mode.fps[0];
+        currentModeId = modeId;
+        currentFps    = newFps;
+        renderFpsPills(modeId, newFps);
+
+        // Send to Pi
+        if (activeCameraIp) {
+            try { await fetch(`${activeCameraIp}/action?var=framesize&val=${modeId}`); } catch(e) {}
+        }
+        update(settingsRef, { cam_framesize: modeId, cam_fps: newFps });
+
+        // 5MP mode is slow — longer restart delay; video modes are fast
+        const delay = modeId === 10 ? 2000 : 1200;
+        if (streamWasOn) setTimeout(startStream, delay);
+    };
+
+    window.setFramerate = async function(fps) {
+        const streamWasOn = isStreamRunning;
+        if (streamWasOn) stopStream();
+
+        currentFps = fps;
+        renderFpsPills(currentModeId, fps);
+
+        if (activeCameraIp) {
+            try { await fetch(`${activeCameraIp}/action?var=framerate&val=${fps}`); } catch(e) {}
+        }
+        update(settingsRef, { cam_fps: fps });
+
+        if (streamWasOn) setTimeout(startStream, 800);
+    };
+
+    // Init fps pills on load
+    renderFpsPills(9, 30);
     window.setCaptureMode = function(mode) {
         captureMode = mode;
         document.querySelectorAll('.quality-pill').forEach(p => p.classList.remove('active'));
@@ -306,9 +421,24 @@
     };
 
     // ─── Stream Controls ──────────────────────────────────────────────────────
+    const RES_LABELS = { 10: "2592×1944", 9: "1920×1080", 8: "1280×720", 6: "640×480" };
+
+    function updateInfoBar() {
+        const bar = document.getElementById("streamInfoBar");
+        if (!activeCameraIp) return;
+        bar.style.display = "flex";
+        document.getElementById("infoRes").textContent  = RES_LABELS[currentModeId] || "--";
+        document.getElementById("infoFps").textContent  = currentModeId === 10 ? "still mode" : `${currentFps} fps`;
+        document.getElementById("infoMode").textContent = currentModeId === 10 ? "📷 5MP Still" : "🎥 Video";
+        // Accent color when streaming
+        const accent = isStreamRunning ? "var(--accent)" : "var(--muted)";
+        document.getElementById("infoRes").style.color  = accent;
+        document.getElementById("infoFps").style.color  = accent;
+        document.getElementById("infoMode").style.color = accent;
+    }
+
     function startStream() {
         if (!activeCameraIp) return;
-        // Pi server is on port 5000; URL already includes port from Firebase
         document.getElementById("videoFeed").src = `${activeCameraIp}/stream?t=${Date.now()}`;
         document.getElementById("videoFeed").style.display = "block";
         const btn = document.getElementById("streamToggleBtn");
@@ -316,6 +446,7 @@
         btn.style.color = "#ff453a";
         btn.style.borderColor = "rgba(255,69,58,0.4)";
         isStreamRunning = true;
+        updateInfoBar();
     }
 
     function stopStream() {
@@ -326,6 +457,7 @@
         btn.style.color = "var(--accent)";
         btn.style.borderColor = "rgba(255, 184, 79, 0.4)";
         isStreamRunning = false;
+        updateInfoBar();
     }
 
     document.getElementById("streamToggleBtn").onclick = () => {
@@ -402,13 +534,13 @@
         if (streamWasOn) stopStream();
 
         const commands = [
-            { var: 'framesize',      val: data.cam_framesize },
-            { var: 'brightness',     val: data.cam_brightness },
-            { var: 'contrast',       val: data.cam_contrast },
-            { var: 'saturation',     val: data.cam_saturation },
-            { var: 'special_effect', val: data.cam_special_effect },
-            { var: 'vflip',          val: data.cam_vflip },
-            { var: 'hmirror',        val: data.cam_hmirror }
+            { var: 'framesize',  val: data.cam_framesize },
+            { var: 'framerate',  val: data.cam_fps },
+            { var: 'brightness', val: data.cam_brightness },
+            { var: 'contrast',   val: data.cam_contrast },
+            { var: 'saturation', val: data.cam_saturation },
+            { var: 'vflip',      val: data.cam_vflip },
+            { var: 'hmirror',    val: data.cam_hmirror }
         ];
 
         for (let cmd of commands) {
@@ -560,8 +692,17 @@
         if (data.cam_brightness     !== undefined) document.getElementById("camBright").value    = data.cam_brightness;
         if (data.cam_contrast       !== undefined) document.getElementById("camContrast").value  = data.cam_contrast;
         if (data.cam_saturation     !== undefined) document.getElementById("camSat").value       = data.cam_saturation;
-        if (data.cam_framesize      !== undefined) document.getElementById("camFramesize").value = data.cam_framesize;
-        if (data.cam_special_effect !== undefined) document.getElementById("camEffect").value    = data.cam_special_effect;
+        if (data.cam_framesize      !== undefined) {
+            // Sync resolution pills
+            document.querySelectorAll('.res-pill').forEach(p => p.classList.remove('active'));
+            const pill = document.querySelector(`.res-pill[data-id="${data.cam_framesize}"]`);
+            if (pill) pill.classList.add('active');
+            currentModeId = data.cam_framesize;
+        }
+        if (data.cam_fps !== undefined) {
+            currentFps = data.cam_fps;
+            renderFpsPills(currentModeId, currentFps);
+        }
         if (data.cam_vflip          !== undefined) document.getElementById("camVflip").checked   = (data.cam_vflip == 1);
         if (data.cam_hmirror        !== undefined) document.getElementById("camHmirror").checked = (data.cam_hmirror == 1);
 
