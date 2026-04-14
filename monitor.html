@@ -182,7 +182,10 @@
 
                     <img id="plantPreview" src="" style="width: 100%; border-radius: 12px; display: none; border: 1px solid rgba(255,255,255,0.1); aspect-ratio: 4 / 3; object-fit: cover;">
                     <div id="idStatus" style="font-size: 14px; color: var(--muted); text-align: center;">Ready to scan. 5MP mode gives the most accurate results.</div>
+                    
                     <button class="btn" id="scanBtn" style="color: var(--accent); border-color: rgba(255, 184, 79, 0.4);">📷 CAPTURE & IDENTIFY</button>
+                    <button class="btn" id="exitScannerBtn" style="display: none; background: rgba(255, 69, 58, 0.15); border-color: rgba(255, 69, 58, 0.4); color: #ff453a;">← Exit to Main Application</button>
+
                 </div>
             </div>
 
@@ -354,10 +357,9 @@
 
         const mode   = VIDEO_MODES[modeId];
         
-        // BUG 2 FIX: Prefer 30fps to maintain consistent exposure and lighting 
         let newFps = 30;
         if (!mode.fps.includes(30)) {
-            newFps = mode.fps[mode.fps.length - 1]; // fallback to lowest if 30 isn't available
+            newFps = mode.fps[mode.fps.length - 1];
         }
         
         currentModeId = modeId;
@@ -580,8 +582,6 @@
             await sendCamCmd('special_effect', 0, false);
             await sendCamCmd('brightness', 0, false);
             await sendCamCmd('contrast', -1, false);
-            
-            // BUG 1 FIX: Resend framesize to force the camera to reboot its Auto-Exposure
             await sendCamCmd('framesize', currentModeId, false);
         }
 
@@ -599,11 +599,28 @@
         
         window.updateZoom(100);
         document.getElementById("camZoom").value = 100;
-
-        // BUG 1 FIX: Resend framesize to force the camera to reboot its Auto-Exposure
         await sendCamCmd('framesize', currentModeId, false);
 
         if (streamWasOn) setTimeout(startStream, 1500);
+    };
+
+    // Exit Button Reset Logic
+    document.getElementById("exitScannerBtn").onclick = () => {
+        const status  = document.getElementById("idStatus");
+        const preview = document.getElementById("plantPreview");
+        const btn     = document.getElementById("scanBtn");
+        const exitBtn = document.getElementById("exitScannerBtn");
+
+        status.textContent = captureMode === '5mp'
+            ? "Ready to scan. 5MP mode gives the most accurate results."
+            : "Ready to scan. Will capture directly from stream frame.";
+        status.style.color = "var(--muted)";
+        
+        preview.style.display = "none";
+        preview.src = "";
+        
+        exitBtn.style.display = "none";
+        btn.style.display = "block";
     };
 
     document.getElementById("scanBtn").onclick = async () => {
@@ -612,6 +629,7 @@
         const status  = document.getElementById("idStatus");
         const preview = document.getElementById("plantPreview");
         const btn     = document.getElementById("scanBtn");
+        const exitBtn = document.getElementById("exitScannerBtn");
 
         if (isStreamRunning) stopStream();
 
@@ -646,8 +664,12 @@
                 { method: 'POST', body: formData }
             );
 
+            // Fetch error handling (catches 403s and general API errors)
             if (!idRes.ok) {
                 const errText = await idRes.text();
+                if (idRes.status === 403 || errText.includes('CORS')) {
+                    throw new Error(`PlantNet error 403: {"message":"CORS error: Origin not allowed"}`);
+                }
                 throw new Error(`PlantNet error ${idRes.status}: ${errText}`);
             }
 
@@ -682,7 +704,18 @@
             });
 
         } catch (e) {
-            status.textContent = "❌ " + e.message;
+            // Check if it's a network-level CORS failure (where fetch fails entirely) or our specific thrown error
+            let errorMessage = e.message;
+            if (errorMessage.toLowerCase().includes('failed to fetch')) {
+                errorMessage = `PlantNet error 403: {"message":"CORS error: Origin not allowed"}`;
+            }
+            
+            // Display the error and switch the buttons
+            status.innerHTML = `❌ ${errorMessage}`;
+            status.style.color = "#ff453a";
+            btn.style.display = "none";
+            exitBtn.style.display = "block";
+            
             console.error(e);
         } finally {
             btn.disabled = false;
