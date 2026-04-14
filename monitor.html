@@ -55,14 +55,15 @@
         .data-value { font-size: 24px; font-weight: 700; color: var(--text); }
         .data-sub { font-size: 12px; color: var(--accent); margin-top: 4px; }
 
-        /* Updated video feed to enforce 4:3 aspect ratio and prevent stretching */
-        #videoFeed { width: 100%; border-radius: 12px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.1); display: none; background: #000; min-height: 200px; aspect-ratio: 4 / 3; object-fit: cover;}
+        /* Video feed wrapper added for zoom functionality */
+        #videoContainer { width: 100%; border-radius: 12px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.1); display: none; background: #000; min-height: 200px; aspect-ratio: 4 / 3; overflow: hidden; position: relative; }
+        #videoFeed { width: 100%; height: 100%; object-fit: cover; transition: transform 0.2s ease-out; transform-origin: center; }
         
         #camStatus { color: var(--muted); font-size: 14px; margin-top: 10px; }
         
-        #gearBtn { background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; transition: transform 0.4s ease, color 0.2s ease; padding: 0; line-height: 1; outline: none; display: flex; align-items: center;}
-        #gearBtn:hover { color: white; }
-        #gearBtn.active { transform: rotate(90deg); color: var(--accent); }
+        #gearBtn { background: none; border: none; color: var(--muted); font-size: 22px; transition: transform 0.4s ease, color 0.2s ease; padding: 0; line-height: 1; outline: none; display: flex; align-items: center; pointer-events: none; }
+        #settingsToggleWrapper:hover #gearBtn, #settingsToggleWrapper:hover span { color: white !important; }
+        #gearBtn.active { transform: rotate(90deg); color: var(--accent) !important; }
 
         .dual-slider { position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 15px; margin-bottom: 10px; }
         .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; left: 0; background: var(--accent); }
@@ -85,10 +86,8 @@
         .btn:hover { background: rgba(255,255,255,0.15); }
         .btn-half { flex: 1; padding: 10px; font-size: 13px; }
         
-        /* Pi-specific badge */
         .pi-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(195, 46, 82, 0.15); border: 1px solid rgba(195, 46, 82, 0.4); color: #e8638a; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: bold; letter-spacing: 0.5px; margin-top: 6px; }
 
-        /* Resolution & FPS pills */
         .res-pill {
             background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.15);
@@ -122,7 +121,6 @@
 
         #loading { width: 100%; text-align: center; color: var(--accent); margin-top: 50px; }
 
-        /* Scan quality selector */
         .quality-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
         .quality-pill { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: var(--muted); font-size: 12px; font-weight: 600; text-align: center; cursor: pointer; transition: 0.2s; }
         .quality-pill.active { background: rgba(255,184,79,0.15); border-color: rgba(255,184,79,0.5); color: var(--accent); }
@@ -154,10 +152,16 @@
                     <span id="infoFps"  style="font-size:11px; color:var(--muted); background:rgba(255,255,255,0.06); border:1px solid var(--stroke); border-radius:20px; padding:3px 10px;">-- fps</span>
                     <span id="infoMode" style="font-size:11px; color:var(--muted); background:rgba(255,255,255,0.06); border:1px solid var(--stroke); border-radius:20px; padding:3px 10px;">--</span>
                 </div>
-                <img id="videoFeed" src="" alt="Camera Stream (Paused)">
+                
+                <div id="videoContainer">
+                    <img id="videoFeed" src="" alt="Camera Stream (Paused)">
+                </div>
                 
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; padding: 0 5px;">
-                    <button id="gearBtn" title="Toggle Camera Settings">⚙️</button>
+                    <div style="display: flex; align-items: center; gap: 10px; cursor: pointer;" id="settingsToggleWrapper">
+                        <button id="gearBtn" title="Toggle Camera Settings">⚙️</button>
+                        <span style="font-size: 13px; color: var(--text); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; transition: 0.2s;">Camera Settings</span>
+                    </div>
                     <span id="flashValText" style="color: var(--accent); font-size: 13px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">FLASH: 0%</span>
                 </div>
 
@@ -239,21 +243,29 @@
                         <span class="ctrl-label">Brightness</span>
                         <div style="display:flex; align-items:center; gap:8px;">
                             <input type="range" id="camBright" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('brightVal').textContent=this.value" onchange="sendCamCmd('brightness', parseInt(this.value))">
-                            <span id="brightVal" style="font-size:12px; color:var(--accent); width:16px; text-align:right;">0</span>
+                            <span id="brightVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">0</span>
                         </div>
                     </div>
                     <div class="ctrl-row">
                         <span class="ctrl-label">Contrast</span>
                         <div style="display:flex; align-items:center; gap:8px;">
                             <input type="range" id="camContrast" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('contrastVal').textContent=this.value" onchange="sendCamCmd('contrast', parseInt(this.value) - 1)">
-                            <span id="contrastVal" style="font-size:12px; color:var(--accent); width:16px; text-align:right;">0</span>
+                            <span id="contrastVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">0</span>
                         </div>
                     </div>
                     <div class="ctrl-row">
                         <span class="ctrl-label">Saturation</span>
                         <div style="display:flex; align-items:center; gap:8px;">
                             <input type="range" id="camSat" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('satVal').textContent=this.value" onchange="sendCamCmd('saturation', parseInt(this.value) - 1)">
-                            <span id="satVal" style="font-size:12px; color:var(--accent); width:16px; text-align:right;">0</span>
+                            <span id="satVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">0</span>
+                        </div>
+                    </div>
+
+                    <div class="ctrl-row" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <span class="ctrl-label">Digital Zoom</span>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <input type="range" id="camZoom" min="100" max="300" value="100" step="1" style="width: 100px;" oninput="updateZoom(this.value)">
+                            <span id="zoomVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">1.0x</span>
                         </div>
                     </div>
 
@@ -271,8 +283,6 @@
                         <div id="fpsRow" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
                         <div id="fpsNote" style="font-size: 11px; color: var(--muted); margin-top: 6px; font-style: italic;"></div>
                     </div>
-
-
 
                     <div class="ctrl-row" style="margin-top: 20px;">
                         <span class="ctrl-label">Vertical Flip</span>
@@ -307,12 +317,10 @@
     let wasStreamRunning = false;
     let nightModeActive = false;
     let cameraSettingsInitialized = false;
-    let captureMode = '5mp'; // 'stream' or '5mp'
+    let captureMode = '5mp';
 
     const PLANTNET_KEY = "2b1020AMM4X5X1BCCGDgAKF9O"; 
 
-    // ─── Resolution & Framerate ───────────────────────────────────────────────
-    // Mirrors VIDEO_MODES in camera_server.py
     const VIDEO_MODES = {
         10: { label: "5MP",   fps: [5, 2, 1],      note: "Still mode — best for plant ID, low framerate" },
         9:  { label: "1080p", fps: [30],           note: "1440x1080 @ 30fps — OV5647 native" },
@@ -342,24 +350,20 @@
         const streamWasOn = isStreamRunning;
         if (streamWasOn) stopStream();
 
-        // Update pills
         document.querySelectorAll('.res-pill').forEach(p => p.classList.remove('active'));
         document.querySelector(`.res-pill[data-id="${modeId}"]`).classList.add('active');
 
-        // Pick highest fps for this mode
         const mode   = VIDEO_MODES[modeId];
         const newFps = mode.fps[0];
         currentModeId = modeId;
         currentFps    = newFps;
         renderFpsPills(modeId, newFps);
 
-        // Send to Pi
         if (activeCameraIp) {
             try { await fetch(`${activeCameraIp}/action?var=framesize&val=${modeId}`); } catch(e) {}
         }
         update(settingsRef, { cam_framesize: modeId, cam_fps: newFps });
 
-        // 5MP mode is slow — longer restart delay; video modes are fast
         const delay = modeId === 10 ? 2000 : 1200;
         if (streamWasOn) setTimeout(startStream, delay);
     };
@@ -379,7 +383,6 @@
         if (streamWasOn) setTimeout(startStream, 800);
     };
 
-    // Init fps pills on load
     renderFpsPills(9, 30);
     window.setCaptureMode = function(mode) {
         captureMode = mode;
@@ -391,7 +394,6 @@
             : "Ready to scan. Will capture directly from stream frame.";
     };
 
-    // ─── Time Formatting ──────────────────────────────────────────────────────
     window.formatFullTime = function(hour, minute) {
         let h = hour % 12 || 12;
         let m = minute !== undefined ? minute.toString().padStart(2, '0') : "00";
@@ -410,13 +412,13 @@
         return false;
     };
 
-    // ─── Gear / Sidebar ───────────────────────────────────────────────────────
-    document.getElementById("gearBtn").onclick = function() {
-        this.classList.toggle("active");
+    // Updated gear button toggle logic for the wrapper
+    document.getElementById("settingsToggleWrapper").onclick = function() {
+        const gear = document.getElementById("gearBtn");
+        gear.classList.toggle("active");
         document.getElementById("settingsSidebar").classList.toggle("open");
     };
 
-    // ─── Stream Controls ──────────────────────────────────────────────────────
     const RES_LABELS = { 10: "2592×1944", 9: "1440×1080", 8: "960×720", 6: "640×480" };
 
     function updateInfoBar() {
@@ -426,7 +428,6 @@
         document.getElementById("infoRes").textContent  = RES_LABELS[currentModeId] || "--";
         document.getElementById("infoFps").textContent  = currentModeId === 10 ? "still mode" : `${currentFps} fps`;
         document.getElementById("infoMode").textContent = currentModeId === 10 ? "📷 5MP Still" : "🎥 Video";
-        // Accent color when streaming
         const accent = isStreamRunning ? "var(--accent)" : "var(--muted)";
         document.getElementById("infoRes").style.color  = accent;
         document.getElementById("infoFps").style.color  = accent;
@@ -436,7 +437,7 @@
     function startStream() {
         if (!activeCameraIp) return;
         document.getElementById("videoFeed").src = `${activeCameraIp}/stream?t=${Date.now()}`;
-        document.getElementById("videoFeed").style.display = "block";
+        document.getElementById("videoContainer").style.display = "block";
         const btn = document.getElementById("streamToggleBtn");
         btn.textContent = "⏹ Stop Live Stream";
         btn.style.color = "#ff453a";
@@ -447,7 +448,7 @@
 
     function stopStream() {
         document.getElementById("videoFeed").src = "";
-        document.getElementById("videoFeed").style.display = "none";
+        document.getElementById("videoContainer").style.display = "none";
         const btn = document.getElementById("streamToggleBtn");
         btn.textContent = "▶ Start Live Stream";
         btn.style.color = "var(--accent)";
@@ -459,6 +460,14 @@
     document.getElementById("streamToggleBtn").onclick = () => {
         if (isStreamRunning) stopStream();
         else startStream();
+    };
+
+    // Zoom Functionality
+    window.updateZoom = function(val) {
+        const scale = val / 100;
+        document.getElementById('zoomVal').textContent = scale.toFixed(1) + 'x';
+        document.getElementById('videoFeed').style.transform = `scale(${scale})`;
+        update(settingsRef, { cam_zoom: scale });
     };
 
     const flashSlider = document.getElementById('streamFlashSlider');
@@ -504,7 +513,6 @@
         if (document.visibilityState === 'hidden') window.turnOffFlash();
     });
 
-    // ─── Camera Commands ──────────────────────────────────────────────────────
     window.sendCamCmd = async function(variable, value, forceHardReload = false) {
         let streamWasOn = isStreamRunning;
         if (streamWasOn) stopStream();
@@ -558,7 +566,6 @@
         this.style.borderColor     = nightModeActive ? "var(--accent)" : "rgba(255,255,255,0.3)";
         this.textContent = nightModeActive ? "🌙 Night Mode (ON)" : "🌙 Night Mode";
 
-        // Stop stream before touching controls
         let streamWasOn = isStreamRunning;
         if (streamWasOn) stopStream();
 
@@ -567,30 +574,30 @@
             await sendCamCmd('contrast', 1, false);
             await sendCamCmd('special_effect', 4, false);
         } else {
-            // Reset all three so the sensor gets a clean slate
-            await sendCamCmd('special_effect', 0, false); // this resets gain too
+            await sendCamCmd('special_effect', 0, false);
             await sendCamCmd('brightness', 0, false);
-            await sendCamCmd('contrast', -1, false); // Maps to UI 0
+            await sendCamCmd('contrast', -1, false);
         }
 
-        // Wait for server-side settle (server adds 1.5s, we add a bit more buffer)
         if (streamWasOn) setTimeout(startStream, 2500);
     };
 
-    // Reset Defaults Button
     document.getElementById("resetCamBtn").onclick = async function() {
         let streamWasOn = isStreamRunning;
         if (streamWasOn) stopStream();
 
         await sendCamCmd('brightness', 0, false);
-        await sendCamCmd('contrast', -1, false); // Maps to UI 0
-        await sendCamCmd('saturation', -1, false); // Maps to UI 0
+        await sendCamCmd('contrast', -1, false); 
+        await sendCamCmd('saturation', -1, false); 
         await sendCamCmd('special_effect', 0, false);
+        
+        // Reset zoom to 1.0x
+        window.updateZoom(100);
+        document.getElementById("camZoom").value = 100;
 
         if (streamWasOn) setTimeout(startStream, 1500);
     };
 
-    // ─── Plant Scanner ────────────────────────────────────────────────────────
     document.getElementById("scanBtn").onclick = async () => {
         if (!activeCameraIp) return alert("Camera IP not found. Is the Raspberry Pi connected to WiFi?");
 
@@ -606,15 +613,12 @@
             let blob;
 
             if (captureMode === '5mp') {
-                // ── Full 5MP capture ──────────────────────────────────────────
-                // The Pi server switches to 2592×1944 for /capture automatically
                 status.textContent = "📸 Switching to 5MP mode & capturing...";
                 const response = await fetch(`${activeCameraIp}/capture`);
                 if (!response.ok) throw new Error(`Camera returned ${response.status}. Is the Pi server running?`);
                 blob = await response.blob();
                 status.textContent = "🧠 Uploading full-res photo to PlantNet...";
             } else {
-                // ── Grab current stream frame ─────────────────────────────────
                 status.textContent = "📸 Grabbing frame from stream...";
                 const response = await fetch(`${activeCameraIp}/capture`);
                 if (!response.ok) throw new Error(`Camera returned ${response.status}.`);
@@ -622,11 +626,9 @@
                 status.textContent = "🧠 Identifying species...";
             }
 
-            // Show preview immediately
             preview.src = URL.createObjectURL(blob);
             preview.style.display = "block";
 
-            // ── PlantNet API ──────────────────────────────────────────────────
             const formData = new FormData();
             formData.append('images', blob, 'plant.jpg');
             formData.append('organs', 'leaf');
@@ -653,7 +655,6 @@
             const displayName = commonName || sciName;
             const confidence  = (bestMatch.score * 100).toFixed(1);
 
-            // Show top 3 results if available
             let resultHTML = `✅ <b>${displayName}</b><br><i>${sciName}</i><br>(${confidence}% confidence)`;
             if (result.results.length > 1) {
                 resultHTML += `<br><br><span style="color:var(--muted);font-size:12px;">Other possibilities:<br>`;
@@ -680,7 +681,6 @@
         }
     };
 
-    // ─── Firebase Sync ────────────────────────────────────────────────────────
     onValue(settingsRef, (snapshot) => {
         document.getElementById("loading").style.display = "none";
         document.getElementById("dashboard").style.display = "flex";
@@ -689,7 +689,6 @@
         const data = snapshot.val();
         if (!data) return;
 
-        // Camera IP (Pi pushes "http://x.x.x.x:5000")
         if (data.camera_ip && data.camera_ip !== activeCameraIp) {
             activeCameraIp = data.camera_ip;
             document.getElementById("camStatus").style.display = "none";
@@ -697,53 +696,54 @@
             syncCameraSettingsFromCloud(data);
         }
 
-        // Sync visual controls to Firebase state
         if (data.cam_brightness !== undefined) {
             document.getElementById("camBright").value    = data.cam_brightness;
             document.getElementById("brightVal").textContent = data.cam_brightness;
         }
         
-        // Offset Contrast logic (+1 for UI)
         if (data.cam_contrast !== undefined) {
             let uiContrast = data.cam_contrast + 1;
             document.getElementById("camContrast").value = uiContrast;
             document.getElementById("contrastVal").textContent = uiContrast;
         }
         
-        // Offset Saturation logic (+1 for UI)
         if (data.cam_saturation !== undefined) {
             let uiSat = data.cam_saturation + 1;
             document.getElementById("camSat").value = uiSat;
             document.getElementById("satVal").textContent = uiSat;
         }
+        
+        if (data.cam_zoom !== undefined) {
+            document.getElementById("camZoom").value = data.cam_zoom * 100;
+            document.getElementById("zoomVal").textContent = data.cam_zoom.toFixed(1) + 'x';
+            document.getElementById("videoFeed").style.transform = `scale(${data.cam_zoom})`;
+        }
 
-        if (data.cam_framesize      !== undefined) {
-            // Sync resolution pills
+        if (data.cam_framesize !== undefined) {
             document.querySelectorAll('.res-pill').forEach(p => p.classList.remove('active'));
             const pill = document.querySelector(`.res-pill[data-id="${data.cam_framesize}"]`);
             if (pill) pill.classList.add('active');
             currentModeId = data.cam_framesize;
         }
+        
         if (data.cam_fps !== undefined) {
             currentFps = data.cam_fps;
             renderFpsPills(currentModeId, currentFps);
         }
-        if (data.cam_vflip          !== undefined) document.getElementById("camVflip").checked   = (data.cam_vflip == 1);
-        if (data.cam_hmirror        !== undefined) document.getElementById("camHmirror").checked = (data.cam_hmirror == 1);
+        
+        if (data.cam_vflip !== undefined) document.getElementById("camVflip").checked = (data.cam_vflip == 1);
+        if (data.cam_hmirror !== undefined) document.getElementById("camHmirror").checked = (data.cam_hmirror == 1);
 
-        // Sensor readings
         document.getElementById("dispTemp").textContent = data.liveTemp !== undefined ? `${data.liveTemp}°F` : "--";
         document.getElementById("dispHum").textContent  = data.liveHum  !== undefined ? `${data.liveHum}%`  : "--";
         document.getElementById("dispSoil").textContent = data.liveSoil !== undefined ? `${data.liveSoil}%` : "--";
         document.getElementById("dispLux").textContent  = data.liveLux  !== undefined ? `${data.liveLux} lux` : "--";
 
-        // Target ranges
         document.getElementById("dispTemp").nextElementSibling.textContent = `Target: ${data.tempLow||'--'}° - ${data.tempHigh||'--'}°`;
         document.getElementById("dispHum").nextElementSibling.textContent  = `Target: ${data.humLow||'--'}% - ${data.humHigh||'--'}%`;
         document.getElementById("dispSoil").nextElementSibling.textContent = `Target: ${data.soilLow||'--'}% - ${data.soilHigh||'--'}%`;
         document.getElementById("dispLux").nextElementSibling.textContent  = `Limit: ${data.luxThreshold||'--'} lux`;
 
-        // Light schedule
         if (data.timeOnHour !== undefined && data.timeOffHour !== undefined) {
             const onTime  = window.formatFullTime(data.timeOnHour,  data.timeOnMin);
             const offTime = window.formatFullTime(data.timeOffHour, data.timeOffMin);
