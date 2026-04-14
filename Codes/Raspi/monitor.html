@@ -36,18 +36,14 @@
         }
         .side-inner { width: 320px; }
 
-        /* Mobile specific re-ordering logic */
         @media (max-width: 960px) {
-            .layout-wrapper { flex-direction: column; align-items: center; }
-            .main-col { display: contents; } /* Allows children to participate in wrapper flex ordering */
-            
-            .live-feed-card { order: 1; width: 100%; margin-bottom: 16px; }
-            .side-col { order: 2; margin-left: 0; margin-bottom: 0; }
-            .side-col.open { max-width: 600px; width: 100%; margin-left: 0; margin-bottom: 16px; }
-            .side-inner { width: 100%; max-width: 600px; margin: 0 auto; }
-            .stats-grid { order: 3; width: 100%; margin-bottom: 16px; }
-            .schedule-card { order: 4; width: 100%; margin-bottom: 16px; }
-            .bottom-btns { order: 5; width: 100%; margin-top: 0 !important; }
+            .side-col.open { 
+                max-width: 600px; 
+                width: 100%;
+                margin-left: 0; 
+                margin-top: 20px; 
+            }
+            .side-inner { width: 100%; max-width: 600px; margin: 0 auto;}
         }
 
         .data-card { background: var(--card); border: 1px solid var(--stroke); border-radius: var(--radius); padding: 20px; text-align: center; backdrop-filter: blur(10px); position: relative; overflow: hidden; }
@@ -132,7 +128,7 @@
 <body>
 
     <div class="header">
-        <a href="index.html" class="back-btn" onclick="turnOffFlash()">← Home</a>
+        <a href="https://group3capstoneplantenclosure.github.io/plant-enclosure/" class="back-btn" onclick="turnOffFlash()">← Home</a>
         <h2>System Monitor</h2>
         <div class="pi-badge">🫐 Raspberry Pi Camera</div>
         <div class="live-status" id="liveTag" style="display:none"><div class="dot"></div> Live Auto-Sync</div>
@@ -143,7 +139,7 @@
     <div class="layout-wrapper" id="dashboard" style="display: none;">
         
         <div class="main-col">
-            <div class="data-card live-feed-card" style="padding: 15px;">
+            <div class="data-card" style="padding: 15px;">
                 <div class="data-label" style="text-align: left; margin-bottom: 10px;">🔴 Live Feed</div>
                 
                 <div id="camStatus">Loading Camera IP from Firebase...</div>
@@ -193,83 +189,6 @@
                 </div>
             </div>
 
-            <div class="side-col" id="settingsSidebar">
-                <div class="side-inner">
-                    <div class="data-card" style="text-align: left;">
-                        <div class="data-label" style="margin-bottom: 20px; font-size: 14px; color: white;">⚙️ Camera Settings</div>
-                        
-                        <div style="display: flex; gap: 10px; margin-bottom: 25px;">
-                            <button class="btn btn-half" id="focusBtn" style="border-color: rgba(255,255,255,0.3);">🔍 Focus Info</button>
-                            <button class="btn btn-half" id="nightBtn" style="border-color: rgba(255,255,255,0.3);">🌙 Night Mode</button>
-                        </div>
-
-                        <div class="ctrl-row">
-                            <span class="ctrl-label">Brightness</span>
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <input type="range" id="camBright" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('brightVal').textContent=this.value" onchange="sendCamCmd('brightness', parseInt(this.value))">
-                                <span id="brightVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">0</span>
-                            </div>
-                        </div>
-                        <div class="ctrl-row">
-                            <span class="ctrl-label">Contrast</span>
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <input type="range" id="camContrast" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('contrastVal').textContent=this.value" onchange="sendCamCmd('contrast', parseInt(this.value) - 1)">
-                                <span id="contrastVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">0</span>
-                            </div>
-                        </div>
-                        <div class="ctrl-row">
-                            <span class="ctrl-label">Saturation</span>
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <input type="range" id="camSat" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('satVal').textContent=this.value" onchange="sendCamCmd('saturation', parseInt(this.value) - 1)">
-                                <span id="satVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">0</span>
-                            </div>
-                        </div>
-
-                        <div class="ctrl-row" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
-                            <span class="ctrl-label">Digital Zoom</span>
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <input type="range" id="camZoom" min="100" max="300" value="100" step="1" style="width: 100px;" oninput="updateZoom(this.value)">
-                                <span id="zoomVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">1.0x</span>
-                            </div>
-                        </div>
-
-                        <div style="margin-top: 25px; margin-bottom: 20px;">
-                            <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">Resolution & Frame Rate</div>
-
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
-                                <button class="res-pill" data-id="10" onclick="setResolution(10)">📷 5MP<br><span>2592×1944</span></button>
-                                <button class="res-pill active" data-id="9"  onclick="setResolution(9)">1080p<br><span>1440×1080</span></button>
-                                <button class="res-pill" data-id="8"  onclick="setResolution(8)">720p<br><span>960×720</span></button>
-                                <button class="res-pill" data-id="6"  onclick="setResolution(6)">480p<br><span>640×480</span></button>
-                            </div>
-
-                            <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; margin-top: 12px;">Frame Rate</div>
-                            <div id="fpsRow" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
-                            <div id="fpsNote" style="font-size: 11px; color: var(--muted); margin-top: 6px; font-style: italic;"></div>
-                        </div>
-
-                        <div class="ctrl-row" style="margin-top: 20px;">
-                            <span class="ctrl-label">Vertical Flip</span>
-                            <label class="switch"><input type="checkbox" id="camVflip" onchange="sendCamCmd('vflip', this.checked ? 1 : 0)"><span class="slider-tog"></span></label>
-                        </div>
-                        <div class="ctrl-row">
-                            <span class="ctrl-label">Mirror Image</span>
-                            <label class="switch"><input type="checkbox" id="camHmirror" onchange="sendCamCmd('hmirror', this.checked ? 1 : 0)"><span class="slider-tog"></span></label>
-                        </div>
-
-                        <button class="btn" id="resetCamBtn" style="margin-top: 20px; border-color: rgba(255,255,255,0.3); font-size: 13px; padding: 10px;">🔄 Reset Defaults</button>
-
-                        <div style="margin-top: 20px; padding: 12px; background: rgba(195,46,82,0.08); border: 1px solid rgba(195,46,82,0.2); border-radius: 10px;">
-                            <div style="font-size: 11px; color: #e8638a; font-weight: bold; margin-bottom: 4px;">🫐 Raspberry Pi Camera</div>
-                            <div style="font-size: 11px; color: var(--muted); line-height: 1.5;">
-                                OV5647 · 5MP · 4:3<br>
-                                Scan mode uses full 2592×1944 resolution automatically for best plant ID results.
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <div class="stats-grid">
                 <div class="data-card">
                     <div class="data-icon">🌡️</div>
@@ -297,7 +216,7 @@
                 </div>
             </div>
             
-            <div class="data-card schedule-card" style="display:flex; justify-content: space-around; align-items: center;">
+            <div class="data-card" style="display:flex; justify-content: space-around; align-items: center;">
                 <div>
                     <div class="data-icon">⏱️</div>
                     <div class="data-label">Light Schedule</div>
@@ -306,15 +225,92 @@
                 </div>
             </div>
 
-            <div class="bottom-btns" style="display: flex; gap: 15px; margin-top: 10px;">
+            <div style="display: flex; gap: 15px; margin-top: 10px;">
                 <a href="control.html" class="btn btn-half" onclick="turnOffFlash()">🎛️ Manual Control</a>
                 <a href="list.html" class="btn btn-half" onclick="turnOffFlash()">🌿 Browse Plants</a>
+            </div>
+        </div>
+
+        <div class="side-col" id="settingsSidebar">
+            <div class="side-inner">
+                <div class="data-card" style="text-align: left;">
+                    <div class="data-label" style="margin-bottom: 20px; font-size: 14px; color: white;">⚙️ Camera Settings</div>
+                    
+                    <div style="display: flex; gap: 10px; margin-bottom: 25px;">
+                        <button class="btn btn-half" id="focusBtn" style="border-color: rgba(255,255,255,0.3);">🔍 Focus Info</button>
+                        <button class="btn btn-half" id="nightBtn" style="border-color: rgba(255,255,255,0.3);">🌙 Night Mode</button>
+                    </div>
+
+                    <div class="ctrl-row">
+                        <span class="ctrl-label">Brightness</span>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <input type="range" id="camBright" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('brightVal').textContent=this.value" onchange="sendCamCmd('brightness', parseInt(this.value))">
+                            <span id="brightVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">0</span>
+                        </div>
+                    </div>
+                    <div class="ctrl-row">
+                        <span class="ctrl-label">Contrast</span>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <input type="range" id="camContrast" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('contrastVal').textContent=this.value" onchange="sendCamCmd('contrast', parseInt(this.value) - 1)">
+                            <span id="contrastVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">0</span>
+                        </div>
+                    </div>
+                    <div class="ctrl-row">
+                        <span class="ctrl-label">Saturation</span>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <input type="range" id="camSat" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('satVal').textContent=this.value" onchange="sendCamCmd('saturation', parseInt(this.value) - 1)">
+                            <span id="satVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">0</span>
+                        </div>
+                    </div>
+
+                    <div class="ctrl-row" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <span class="ctrl-label">Digital Zoom</span>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <input type="range" id="camZoom" min="100" max="300" value="100" step="1" style="width: 100px;" oninput="updateZoom(this.value)">
+                            <span id="zoomVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">1.0x</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 25px; margin-bottom: 20px;">
+                        <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">Resolution & Frame Rate</div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
+                            <button class="res-pill" data-id="10" onclick="setResolution(10)">📷 5MP<br><span>2592×1944</span></button>
+                            <button class="res-pill active" data-id="9"  onclick="setResolution(9)">1080p<br><span>1440×1080</span></button>
+                            <button class="res-pill" data-id="8"  onclick="setResolution(8)">720p<br><span>960×720</span></button>
+                            <button class="res-pill" data-id="6"  onclick="setResolution(6)">480p<br><span>640×480</span></button>
+                        </div>
+
+                        <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; margin-top: 12px;">Frame Rate</div>
+                        <div id="fpsRow" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+                        <div id="fpsNote" style="font-size: 11px; color: var(--muted); margin-top: 6px; font-style: italic;"></div>
+                    </div>
+
+                    <div class="ctrl-row" style="margin-top: 20px;">
+                        <span class="ctrl-label">Vertical Flip</span>
+                        <label class="switch"><input type="checkbox" id="camVflip" onchange="sendCamCmd('vflip', this.checked ? 1 : 0)"><span class="slider-tog"></span></label>
+                    </div>
+                    <div class="ctrl-row">
+                        <span class="ctrl-label">Mirror Image</span>
+                        <label class="switch"><input type="checkbox" id="camHmirror" onchange="sendCamCmd('hmirror', this.checked ? 1 : 0)"><span class="slider-tog"></span></label>
+                    </div>
+
+                    <button class="btn" id="resetCamBtn" style="margin-top: 20px; border-color: rgba(255,255,255,0.3); font-size: 13px; padding: 10px;">🔄 Reset Defaults</button>
+
+                    <div style="margin-top: 20px; padding: 12px; background: rgba(195,46,82,0.08); border: 1px solid rgba(195,46,82,0.2); border-radius: 10px;">
+                        <div style="font-size: 11px; color: #e8638a; font-weight: bold; margin-bottom: 4px;">🫐 Raspberry Pi Camera</div>
+                        <div style="font-size: 11px; color: var(--muted); line-height: 1.5;">
+                            OV5647 · 5MP · 4:3<br>
+                            Scan mode uses full 2592×1944 resolution automatically for best plant ID results.
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
 <script type="module">
-    import { db, ref, update, onValue } from './firebase-config.js';
+    import { db, ref, update, onValue } from '/static/firebase-config.js';
 
     const settingsRef = ref(db, 'settings');
     let activeCameraIp = null;
@@ -324,8 +320,6 @@
     let nightModeActive = false;
     let cameraSettingsInitialized = false;
     let captureMode = '5mp';
-
-    const PLANTNET_KEY = "2b1020AMM4X5X1BCCGDgAKF9O"; 
 
     const VIDEO_MODES = {
         10: { label: "5MP",   fps: [5, 2, 1],      note: "Still mode — best for plant ID, low framerate" },
