@@ -83,7 +83,15 @@
         .btn:hover { background: rgba(255,255,255,0.15); }
         .btn-half { flex: 1; padding: 10px; font-size: 13px; }
         
+        /* Pi-specific badge */
+        .pi-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(195, 46, 82, 0.15); border: 1px solid rgba(195, 46, 82, 0.4); color: #e8638a; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: bold; letter-spacing: 0.5px; margin-top: 6px; }
+
         #loading { width: 100%; text-align: center; color: var(--accent); margin-top: 50px; }
+
+        /* Scan quality selector */
+        .quality-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+        .quality-pill { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: var(--muted); font-size: 12px; font-weight: 600; text-align: center; cursor: pointer; transition: 0.2s; }
+        .quality-pill.active { background: rgba(255,184,79,0.15); border-color: rgba(255,184,79,0.5); color: var(--accent); }
     </style>
 </head>
 <body>
@@ -91,6 +99,7 @@
     <div class="header">
         <a href="index.html" class="back-btn" onclick="turnOffFlash()">← Home</a>
         <h2>System Monitor</h2>
+        <div class="pi-badge">🫐 Raspberry Pi Camera</div>
         <div class="live-status" id="liveTag" style="display:none"><div class="dot"></div> Live Auto-Sync</div>
     </div>
 
@@ -117,11 +126,22 @@
                     <input type="range" id="streamFlashSlider" min="0" max="100" value="0" step="1" oninput="updateStreamFlash()" onchange="finalizeStreamFlash()">
                 </div>
                 
+                <!-- Plant AI Scanner -->
                 <div style="display: flex; flex-direction: column; align-items: center; gap: 15px; width: 100%; margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
                     <div class="data-label" style="width: 100%; text-align: left;">🌿 Plant AI Scanner</div>
+
+                    <!-- Capture quality selector -->
+                    <div style="width: 100%;">
+                        <div style="font-size: 11px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px;">Capture Mode</div>
+                        <div class="quality-row">
+                            <div class="quality-pill active" id="pill-5mp" onclick="setCaptureMode('5mp')">📷 5MP Full Res<br><span style="font-weight:400;opacity:0.7">Best ID accuracy</span></div>
+                            <div class="quality-pill" id="pill-stream" onclick="setCaptureMode('stream')">🎥 From Stream<br><span style="font-weight:400;opacity:0.7">Faster</span></div>
+                        </div>
+                    </div>
+
                     <img id="plantPreview" src="" style="width: 100%; border-radius: 12px; display: none; border: 1px solid rgba(255,255,255,0.1);">
-                    <div id="idStatus" style="font-size: 14px; color: var(--muted); text-align: center;">Ready to scan...</div>
-                    <button class="btn" id="scanBtn" style="color: var(--accent); border-color: rgba(255, 184, 79, 0.4);">CAPTURE & IDENTIFY</button>
+                    <div id="idStatus" style="font-size: 14px; color: var(--muted); text-align: center;">Ready to scan. 5MP mode gives the most accurate results.</div>
+                    <button class="btn" id="scanBtn" style="color: var(--accent); border-color: rgba(255, 184, 79, 0.4);">📷 CAPTURE & IDENTIFY</button>
                 </div>
             </div>
 
@@ -167,13 +187,14 @@
             </div>
         </div>
 
+        <!-- Camera Settings Sidebar -->
         <div class="side-col" id="settingsSidebar">
             <div class="side-inner">
                 <div class="data-card" style="text-align: left;">
                     <div class="data-label" style="margin-bottom: 20px; font-size: 14px; color: white;">⚙️ Camera Settings</div>
                     
                     <div style="display: flex; gap: 10px; margin-bottom: 25px;">
-                        <button class="btn btn-half" id="focusBtn" style="border-color: rgba(255,255,255,0.3);">🔍 Autofocus</button>
+                        <button class="btn btn-half" id="focusBtn" style="border-color: rgba(255,255,255,0.3);">🔍 Focus Info</button>
                         <button class="btn btn-half" id="nightBtn" style="border-color: rgba(255,255,255,0.3);">🌙 Night Mode</button>
                     </div>
 
@@ -193,13 +214,13 @@
                     <div class="ctrl-row" style="margin-top: 25px;">
                         <span class="ctrl-label">Resolution</span>
                         <select class="cam-select" id="camFramesize" onchange="sendCamCmd('framesize', this.value, true)">
-                            <option value="10">UXGA (1600x1200)</option>
-                            <option value="9">SXGA (1280x1024)</option>
-                            <option value="8">XGA (1024x768)</option>
-                            <option value="7">SVGA (800x600)</option>
-                            <option value="6">VGA (640x480)</option>
-                            <option value="5">CIF (400x296)</option>
-                            <option value="4" selected>QVGA (320x240)</option>
+                            <option value="10">Near-UXGA (1280×960)</option>
+                            <option value="9">720p (1280×720)</option>
+                            <option value="8">XGA (1024×768)</option>
+                            <option value="7">SVGA (800×600)</option>
+                            <option value="6" selected>VGA (640×480)</option>
+                            <option value="5">CIF (400×296)</option>
+                            <option value="4">QVGA (320×240)</option>
                         </select>
                     </div>
                     <div class="ctrl-row">
@@ -207,7 +228,7 @@
                         <select class="cam-select" id="camEffect" onchange="sendCamCmd('special_effect', this.value)">
                             <option value="0">Normal</option>
                             <option value="2">Grayscale</option>
-                            <option value="4">Green Tint</option>
+                            <option value="4">Green Tint (Night)</option>
                             <option value="6">Sepia</option>
                         </select>
                     </div>
@@ -219,6 +240,15 @@
                     <div class="ctrl-row">
                         <span class="ctrl-label">Mirror Image</span>
                         <label class="switch"><input type="checkbox" id="camHmirror" onchange="sendCamCmd('hmirror', this.checked ? 1 : 0)"><span class="slider-tog"></span></label>
+                    </div>
+
+                    <!-- Pi-specific info note -->
+                    <div style="margin-top: 20px; padding: 12px; background: rgba(195,46,82,0.08); border: 1px solid rgba(195,46,82,0.2); border-radius: 10px;">
+                        <div style="font-size: 11px; color: #e8638a; font-weight: bold; margin-bottom: 4px;">🫐 Raspberry Pi Camera</div>
+                        <div style="font-size: 11px; color: var(--muted); line-height: 1.5;">
+                            OV5647 · 5MP · 1080p<br>
+                            Scan mode uses full 2592×1944 resolution automatically for best plant ID results.
+                        </div>
                     </div>
                 </div>
             </div>
@@ -234,10 +264,23 @@
     let isStreamRunning = false;
     let wasStreamRunning = false;
     let nightModeActive = false;
-    let cameraSettingsInitialized = false; 
+    let cameraSettingsInitialized = false;
+    let captureMode = '5mp'; // 'stream' or '5mp'
+
     const PLANTNET_KEY = "2b1020AMM4X5X1BCCGDgAKF9O"; 
 
-    // --- TIME FORMATTING & LOGIC ---
+    // ─── Capture Mode ─────────────────────────────────────────────────────────
+    window.setCaptureMode = function(mode) {
+        captureMode = mode;
+        document.querySelectorAll('.quality-pill').forEach(p => p.classList.remove('active'));
+        document.getElementById(`pill-${mode}`).classList.add('active');
+        const status = document.getElementById("idStatus");
+        status.textContent = mode === '5mp'
+            ? "Ready to scan. 5MP mode gives the most accurate results."
+            : "Ready to scan. Will capture directly from stream frame.";
+    };
+
+    // ─── Time Formatting ──────────────────────────────────────────────────────
     window.formatFullTime = function(hour, minute) {
         let h = hour % 12 || 12;
         let m = minute !== undefined ? minute.toString().padStart(2, '0') : "00";
@@ -247,40 +290,36 @@
 
     window.checkIfLightIsOn = function(onH, onM, offH, offM) {
         if (onH === undefined || offH === undefined) return false;
-        
         const now = new Date();
         const currentMins = now.getHours() * 60 + now.getMinutes();
-        
-        const onMins = onH * 60 + (onM || 0);
+        const onMins  = onH  * 60 + (onM  || 0);
         const offMins = offH * 60 + (offM || 0);
-
-        if (onMins < offMins) { 
-            return currentMins >= onMins && currentMins < offMins;
-        } else if (onMins > offMins) { 
-            return currentMins >= onMins || currentMins < offMins;
-        }
+        if (onMins < offMins) return currentMins >= onMins && currentMins < offMins;
+        if (onMins > offMins) return currentMins >= onMins || currentMins < offMins;
         return false;
     };
 
-    // --- CAMERA & UI ACTIONS ---
+    // ─── Gear / Sidebar ───────────────────────────────────────────────────────
     document.getElementById("gearBtn").onclick = function() {
         this.classList.toggle("active");
         document.getElementById("settingsSidebar").classList.toggle("open");
     };
 
+    // ─── Stream Controls ──────────────────────────────────────────────────────
     function startStream() {
-        if(!activeCameraIp) return; //if camera resolution changed refreshes stream for connection
-        document.getElementById("videoFeed").src = `${activeCameraIp}/stream?t=${new Date().getTime()}`;
+        if (!activeCameraIp) return;
+        // Pi server is on port 5000; URL already includes port from Firebase
+        document.getElementById("videoFeed").src = `${activeCameraIp}/stream?t=${Date.now()}`;
         document.getElementById("videoFeed").style.display = "block";
         const btn = document.getElementById("streamToggleBtn");
         btn.textContent = "⏹ Stop Live Stream";
-        btn.style.color = "#ff453a"; 
+        btn.style.color = "#ff453a";
         btn.style.borderColor = "rgba(255,69,58,0.4)";
         isStreamRunning = true;
     }
 
     function stopStream() {
-        document.getElementById("videoFeed").src = ""; 
+        document.getElementById("videoFeed").src = "";
         document.getElementById("videoFeed").style.display = "none";
         const btn = document.getElementById("streamToggleBtn");
         btn.textContent = "▶ Start Live Stream";
@@ -290,246 +329,269 @@
     }
 
     document.getElementById("streamToggleBtn").onclick = () => {
-        if(isStreamRunning) stopStream();
+        if (isStreamRunning) stopStream();
         else startStream();
     };
 
     const flashSlider = document.getElementById('streamFlashSlider');
-    
+
     function pauseForSlider() {
         wasStreamRunning = isStreamRunning;
-        if (isStreamRunning) stopStream(); 
+        if (isStreamRunning) stopStream();
     }
-    
-    flashSlider.addEventListener('mousedown', pauseForSlider);
-    flashSlider.addEventListener('touchstart', pauseForSlider, {passive: true});
+
+    flashSlider.addEventListener('mousedown',  pauseForSlider);
+    flashSlider.addEventListener('touchstart', pauseForSlider, { passive: true });
 
     window.updateStreamFlash = function() {
         const val = flashSlider.value;
         document.getElementById('streamFlashTrack').style.width = val + '%';
         document.getElementById('flashValText').textContent = `FLASH: ${val}%`;
-        
         if (activeCameraIp && !flashTimeout) {
             flashTimeout = setTimeout(() => {
-                const currentVal = flashSlider.value;
-                let pwmValue = Math.round((currentVal / 100) * 255);
-                fetch(`${activeCameraIp}/flash?v=${pwmValue}`).catch(() => {});
+                const pwm = Math.round((flashSlider.value / 100) * 255);
+                fetch(`${activeCameraIp}/flash?v=${pwm}`).catch(() => {});
                 flashTimeout = null;
-            }, 100); 
+            }, 100);
         }
     };
 
     window.finalizeStreamFlash = function() {
         if (activeCameraIp) {
-            const val = flashSlider.value;
-            let pwmValue = Math.round((val / 100) * 255);
-            fetch(`${activeCameraIp}/flash?v=${pwmValue}`).catch(() => {});
+            const pwm = Math.round((flashSlider.value / 100) * 255);
+            fetch(`${activeCameraIp}/flash?v=${pwm}`).catch(() => {});
         }
-        if (wasStreamRunning) setTimeout(startStream, 200); 
+        if (wasStreamRunning) setTimeout(startStream, 200);
     };
 
     window.turnOffFlash = function() {
-        if(activeCameraIp) {
-            stopStream(); 
-            fetch(`${activeCameraIp}/flash?v=0`, { keepalive: true }).catch(()=>{});
+        if (activeCameraIp) {
+            stopStream();
+            fetch(`${activeCameraIp}/flash?v=0`, { keepalive: true }).catch(() => {});
         }
     };
 
     window.addEventListener('pagehide', window.turnOffFlash);
     window.addEventListener('visibilitychange', () => {
-        if(document.visibilityState === 'hidden') window.turnOffFlash();
+        if (document.visibilityState === 'hidden') window.turnOffFlash();
     });
 
-    // --- CLOUD SYNC & STREAM RESTART LOGIC ---
+    // ─── Camera Commands ──────────────────────────────────────────────────────
     window.sendCamCmd = async function(variable, value, forceHardReload = false) {
-
-        //Stream Pause logic
         let streamWasOn = isStreamRunning;
-        if(streamWasOn) stopStream();
+        if (streamWasOn) stopStream();
 
-        //Send command to esp32
-        if(activeCameraIp) {
-            try { await fetch(`${activeCameraIp}/action?var=${variable}&val=${value}`); } catch(e) {console.error("Camera cmd failed", e); }
+        if (activeCameraIp) {
+            try { await fetch(`${activeCameraIp}/action?var=${variable}&val=${value}`); }
+            catch (e) { console.error("Camera cmd failed", e); }
         }
 
-        //Save Settings on Firebase
         let updates = {};
         updates[`cam_${variable}`] = value;
         update(settingsRef, updates);
 
-        //Resume Stream
-        if(streamWasOn) {
-            if(forceHardReload) setTimeout(startStream, 800);
-            else setTimeout(startStream, 200);
+        if (streamWasOn) {
+            setTimeout(startStream, forceHardReload ? 800 : 200);
         }
     };
 
-    //Load memory from Firebase when page is opened
     async function syncCameraSettingsFromCloud(data) {
-        if(cameraSettingsInitialized) return;
+        if (cameraSettingsInitialized) return;
         cameraSettingsInitialized = true;
-        
         let streamWasOn = isStreamRunning;
-        if(streamWasOn) stopStream();
+        if (streamWasOn) stopStream();
 
         const commands = [
-            { var: 'framesize', val: data.cam_framesize },
-            { var: 'brightness', val: data.cam_brightness },
-            { var: 'contrast', val: data.cam_contrast },
-            { var: 'saturation', val: data.cam_saturation },
+            { var: 'framesize',      val: data.cam_framesize },
+            { var: 'brightness',     val: data.cam_brightness },
+            { var: 'contrast',       val: data.cam_contrast },
+            { var: 'saturation',     val: data.cam_saturation },
             { var: 'special_effect', val: data.cam_special_effect },
-            { var: 'vflip', val: data.cam_vflip },
-            { var: 'hmirror', val: data.cam_hmirror }
+            { var: 'vflip',          val: data.cam_vflip },
+            { var: 'hmirror',        val: data.cam_hmirror }
         ];
 
-        for(let cmd of commands) {
-            if(cmd.val !== undefined && activeCameraIp) {
-                try { await fetch(`${activeCameraIp}/action?var=${cmd.var}&val=${cmd.val}`); } catch(e) {}
+        for (let cmd of commands) {
+            if (cmd.val !== undefined && activeCameraIp) {
+                try { await fetch(`${activeCameraIp}/action?var=${cmd.var}&val=${cmd.val}`); }
+                catch (e) {}
             }
         }
-        if(streamWasOn) setTimeout(startStream, 200);
+        if (streamWasOn) setTimeout(startStream, 200);
     }
 
     document.getElementById("focusBtn").onclick = () => {
-        alert("The ESP32-CAM uses a fixed-focus lens. To adjust focus, you must physically twist the small black lens ring on the camera module itself. It may be glued in place from the factory!");
+        alert("The OV5647 on the RasTech module has a manually adjustable focus ring on the lens barrel. Rotate it gently clockwise or counter-clockwise until the image is sharp. It may be tight — a rubber glove helps!");
     };
 
     document.getElementById("nightBtn").onclick = async function() {
         nightModeActive = !nightModeActive;
         this.style.backgroundColor = nightModeActive ? "rgba(255, 184, 79, 0.2)" : "rgba(255,255,255,0.08)";
-        this.style.borderColor = nightModeActive ? "var(--accent)" : "rgba(255,255,255,0.3)";
+        this.style.borderColor     = nightModeActive ? "var(--accent)" : "rgba(255,255,255,0.3)";
         this.textContent = nightModeActive ? "🌙 Night Mode (ON)" : "🌙 Night Mode";
 
         let streamWasOn = isStreamRunning;
-        if(streamWasOn) stopStream();
+        if (streamWasOn) stopStream();
 
-        if(nightModeActive) {
+        if (nightModeActive) {
             await sendCamCmd('brightness', 2, false);
             await sendCamCmd('contrast', 1, false);
-            await sendCamCmd('special_effect', 4, false); 
+            await sendCamCmd('special_effect', 4, false);
         } else {
             await sendCamCmd('brightness', 0, false);
             await sendCamCmd('contrast', 0, false);
             await sendCamCmd('special_effect', 0, false);
         }
 
-        if(streamWasOn) setTimeout(startStream, 200);
+        if (streamWasOn) setTimeout(startStream, 200);
     };
 
+    // ─── Plant Scanner ────────────────────────────────────────────────────────
     document.getElementById("scanBtn").onclick = async () => {
-        if(!activeCameraIp) return alert("Camera IP not found. Is the ESP32 connected to WiFi?");
+        if (!activeCameraIp) return alert("Camera IP not found. Is the Raspberry Pi connected to WiFi?");
 
-        const status = document.getElementById("idStatus");
+        const status  = document.getElementById("idStatus");
         const preview = document.getElementById("plantPreview");
-        const btn = document.getElementById("scanBtn");
+        const btn     = document.getElementById("scanBtn");
 
-        if (isStreamRunning) stopStream(); 
+        if (isStreamRunning) stopStream();
 
         btn.disabled = true;
-        status.textContent = "📸 Snapping photo...";
 
         try {
-            const response = await fetch(`${activeCameraIp}/capture`);
-            if (!response.ok) throw new Error("Camera not responding.");
-            
-            const blob = await response.blob();
+            let blob;
+
+            if (captureMode === '5mp') {
+                // ── Full 5MP capture ──────────────────────────────────────────
+                // The Pi server switches to 2592×1944 for /capture automatically
+                status.textContent = "📸 Switching to 5MP mode & capturing...";
+                const response = await fetch(`${activeCameraIp}/capture`);
+                if (!response.ok) throw new Error(`Camera returned ${response.status}. Is the Pi server running?`);
+                blob = await response.blob();
+                status.textContent = "🧠 Uploading full-res photo to PlantNet...";
+            } else {
+                // ── Grab current stream frame ─────────────────────────────────
+                status.textContent = "📸 Grabbing frame from stream...";
+                const response = await fetch(`${activeCameraIp}/capture`);
+                if (!response.ok) throw new Error(`Camera returned ${response.status}.`);
+                blob = await response.blob();
+                status.textContent = "🧠 Identifying species...";
+            }
+
+            // Show preview immediately
             preview.src = URL.createObjectURL(blob);
             preview.style.display = "block";
 
-            status.textContent = "🧠 Identifying species...";
+            // ── PlantNet API ──────────────────────────────────────────────────
             const formData = new FormData();
-            formData.append('images', blob);
+            formData.append('images', blob, 'plant.jpg');
             formData.append('organs', 'leaf');
 
-            const idRes = await fetch(`https://my-api.plantnet.org/v2/identify/all?api-key=${PLANTNET_KEY}`, {
-                method: 'POST', body: formData
-            });
+            const idRes = await fetch(
+                `https://my-api.plantnet.org/v2/identify/all?api-key=${PLANTNET_KEY}&include-related-images=false`,
+                { method: 'POST', body: formData }
+            );
+
+            if (!idRes.ok) {
+                const errText = await idRes.text();
+                throw new Error(`PlantNet error ${idRes.status}: ${errText}`);
+            }
 
             const result = await idRes.json();
-            if(!result.results) throw new Error("Plant not recognized.");
-            
-            const bestMatch = result.results[0];
-            const plantName = bestMatch.species.commonNames[0] || bestMatch.species.scientificName;
 
-            status.innerHTML = `✅ Found: <b>${plantName}</b><br>(${(bestMatch.score * 100).toFixed(1)}% accuracy)`;
-            await update(settingsRef, { identified_plant: plantName });
+            if (!result.results || result.results.length === 0) {
+                throw new Error("Plant not recognized. Try better lighting or a closer shot of the leaves.");
+            }
+
+            const bestMatch   = result.results[0];
+            const commonName  = bestMatch.species.commonNames?.[0];
+            const sciName     = bestMatch.species.scientificName;
+            const displayName = commonName || sciName;
+            const confidence  = (bestMatch.score * 100).toFixed(1);
+
+            // Show top 3 results if available
+            let resultHTML = `✅ <b>${displayName}</b><br><i>${sciName}</i><br>(${confidence}% confidence)`;
+            if (result.results.length > 1) {
+                resultHTML += `<br><br><span style="color:var(--muted);font-size:12px;">Other possibilities:<br>`;
+                result.results.slice(1, 3).forEach(r => {
+                    const n = r.species.commonNames?.[0] || r.species.scientificName;
+                    resultHTML += `• ${n} (${(r.score * 100).toFixed(1)}%)<br>`;
+                });
+                resultHTML += `</span>`;
+            }
+            status.innerHTML = resultHTML;
+
+            await update(settingsRef, {
+                identified_plant:      displayName,
+                identified_scientific: sciName,
+                identified_confidence: confidence,
+                identified_at:         new Date().toISOString()
+            });
 
         } catch (e) {
-            status.textContent = "❌ Error: " + e.message;
+            status.textContent = "❌ " + e.message;
+            console.error(e);
         } finally {
             btn.disabled = false;
         }
     };
 
- // --- MAIN SYNC LOGIC ---
+    // ─── Firebase Sync ────────────────────────────────────────────────────────
     onValue(settingsRef, (snapshot) => {
-        //hide loading screen
         document.getElementById("loading").style.display = "none";
         document.getElementById("dashboard").style.display = "flex";
+        document.getElementById("liveTag").style.display = "flex";
 
         const data = snapshot.val();
-        if (data) {
-            if (data.camera_ip && data.camera_ip !== activeCameraIp) {
-                activeCameraIp = data.camera_ip;
-                document.getElementById("camStatus").style.display = "none";
-                document.getElementById("streamToggleBtn").style.display = "block";
-                syncCameraSettingsFromCloud(data);
-            }
+        if (!data) return;
 
-            // Sync Visual Settings
-            if(data.cam_brightness !== undefined) document.getElementById("camBright").value = data.cam_brightness;
-            if(data.cam_contrast !== undefined) document.getElementById("camContrast").value = data.cam_contrast;
-            if(data.cam_saturation !== undefined) document.getElementById("camSat").value = data.cam_saturation;
-            if(data.cam_framesize !== undefined) document.getElementById("camFramesize").value = data.cam_framesize;
-            if(data.cam_special_effect !== undefined) document.getElementById("camEffect").value = data.cam_special_effect;
-            if(data.cam_vflip !== undefined) document.getElementById("camVflip").checked = (data.cam_vflip == 1);
-            if(data.cam_hmirror !== undefined) document.getElementById("camHmirror").checked = (data.cam_hmirror == 1);
-            
-            // Sync Current Sensor Data
-            document.getElementById("dispTemp").textContent = data.liveTemp !== undefined ? `${data.liveTemp}°F` : "-- °F";
-            document.getElementById("dispHum").textContent = data.liveHum !== undefined ? `${data.liveHum}%` : "-- %";
-            document.getElementById("dispSoil").textContent = data.liveSoil !== undefined ? `${data.liveSoil}%` : "-- %";
-            document.getElementById("dispLux").textContent = data.liveLux !== undefined ? `${data.liveLux} lux` : "-- lux";
+        // Camera IP (Pi pushes "http://x.x.x.x:5000")
+        if (data.camera_ip && data.camera_ip !== activeCameraIp) {
+            activeCameraIp = data.camera_ip;
+            document.getElementById("camStatus").style.display = "none";
+            document.getElementById("streamToggleBtn").style.display = "block";
+            syncCameraSettingsFromCloud(data);
+        }
 
-            // Sync Target Ranges
-            document.getElementById("dispTemp").nextElementSibling.textContent = `Target: ${data.tempLow || '--'}° - ${data.tempHigh || '--'}°`;
-            document.getElementById("dispHum").nextElementSibling.textContent = `Target: ${data.humLow || '--'}% - ${data.humHigh || '--'}%`;
-            document.getElementById("dispSoil").nextElementSibling.textContent = `Target: ${data.soilLow || '--'}% - ${data.soilHigh || '--'}%`;
-            document.getElementById("dispLux").nextElementSibling.textContent = `Limit: ${data.luxThreshold || '--'} lux`;
-            
-            // FIX: Safe check for dispBright so it doesn't crash the script if the element is missing
-            const dispBrightEl = document.getElementById("dispBright");
-            if (dispBrightEl) {
-                dispBrightEl.textContent = `${data.globalBrightness || 10}/10`;
-            }
+        // Sync visual controls to Firebase state
+        if (data.cam_brightness     !== undefined) document.getElementById("camBright").value    = data.cam_brightness;
+        if (data.cam_contrast       !== undefined) document.getElementById("camContrast").value  = data.cam_contrast;
+        if (data.cam_saturation     !== undefined) document.getElementById("camSat").value       = data.cam_saturation;
+        if (data.cam_framesize      !== undefined) document.getElementById("camFramesize").value = data.cam_framesize;
+        if (data.cam_special_effect !== undefined) document.getElementById("camEffect").value    = data.cam_special_effect;
+        if (data.cam_vflip          !== undefined) document.getElementById("camVflip").checked   = (data.cam_vflip == 1);
+        if (data.cam_hmirror        !== undefined) document.getElementById("camHmirror").checked = (data.cam_hmirror == 1);
 
-            // --- FIXED: Light Schedule Display & Highlight Logic ---
-            // Only try to format the time if the variables actually exist in Firebase
-            if (data.timeOnHour !== undefined && data.timeOffHour !== undefined) {
-                let onTime = window.formatFullTime(data.timeOnHour, data.timeOnMin);
-                let offTime = window.formatFullTime(data.timeOffHour, data.timeOffMin);
-                
-                const timeDisplay = document.getElementById("dispTime");
-                timeDisplay.textContent = `${onTime} to ${offTime}`;
-                
-                const isCurrentlyOn = data.timerEnabled && window.checkIfLightIsOn(data.timeOnHour, data.timeOnMin, data.timeOffHour, data.timeOffMin);
-                
-                if (isCurrentlyOn) {
-                    timeDisplay.style.color = "var(--accent)"; 
-                    timeDisplay.style.textShadow = "0 0 12px rgba(255, 184, 79, 0.4)"; 
-                } else {
-                    timeDisplay.style.color = "var(--text)"; 
-                    timeDisplay.style.textShadow = "none";
-                }
-                
-                const tState = document.getElementById("dispTimerState");
-                if (data.timerEnabled) {
-                    tState.textContent = isCurrentlyOn ? "Timer Active (Lights ON)" : "Timer Active (Lights OFF)";
-                    tState.style.color = isCurrentlyOn ? "var(--accent)" : "#2cff8a"; 
-                } else {
-                    tState.textContent = "Timer Disabled";
-                    tState.style.color = "var(--muted)";
-                }
+        // Sensor readings
+        document.getElementById("dispTemp").textContent = data.liveTemp !== undefined ? `${data.liveTemp}°F` : "--";
+        document.getElementById("dispHum").textContent  = data.liveHum  !== undefined ? `${data.liveHum}%`  : "--";
+        document.getElementById("dispSoil").textContent = data.liveSoil !== undefined ? `${data.liveSoil}%` : "--";
+        document.getElementById("dispLux").textContent  = data.liveLux  !== undefined ? `${data.liveLux} lux` : "--";
+
+        // Target ranges
+        document.getElementById("dispTemp").nextElementSibling.textContent = `Target: ${data.tempLow||'--'}° - ${data.tempHigh||'--'}°`;
+        document.getElementById("dispHum").nextElementSibling.textContent  = `Target: ${data.humLow||'--'}% - ${data.humHigh||'--'}%`;
+        document.getElementById("dispSoil").nextElementSibling.textContent = `Target: ${data.soilLow||'--'}% - ${data.soilHigh||'--'}%`;
+        document.getElementById("dispLux").nextElementSibling.textContent  = `Limit: ${data.luxThreshold||'--'} lux`;
+
+        // Light schedule
+        if (data.timeOnHour !== undefined && data.timeOffHour !== undefined) {
+            const onTime  = window.formatFullTime(data.timeOnHour,  data.timeOnMin);
+            const offTime = window.formatFullTime(data.timeOffHour, data.timeOffMin);
+            const timeDisplay = document.getElementById("dispTime");
+            timeDisplay.textContent = `${onTime} to ${offTime}`;
+
+            const isOn = data.timerEnabled && window.checkIfLightIsOn(data.timeOnHour, data.timeOnMin, data.timeOffHour, data.timeOffMin);
+            timeDisplay.style.color      = isOn ? "var(--accent)" : "var(--text)";
+            timeDisplay.style.textShadow = isOn ? "0 0 12px rgba(255, 184, 79, 0.4)" : "none";
+
+            const tState = document.getElementById("dispTimerState");
+            if (data.timerEnabled) {
+                tState.textContent  = isOn ? "Timer Active (Lights ON)" : "Timer Active (Lights OFF)";
+                tState.style.color  = isOn ? "var(--accent)" : "#2cff8a";
+            } else {
+                tState.textContent = "Timer Disabled";
+                tState.style.color = "var(--muted)";
             }
         }
     });

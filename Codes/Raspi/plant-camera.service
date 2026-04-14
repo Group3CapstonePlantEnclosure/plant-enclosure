@@ -1,0 +1,15 @@
+[Unit]
+Description=Plant Monitor Camera Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/picam/camera_server.py
+WorkingDirectory=/home/picam
+Restart=always
+RestartSec=5
+User=picam
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
