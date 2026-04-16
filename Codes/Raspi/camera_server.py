@@ -242,20 +242,30 @@ def action():
 
     return "", 200
 
-# ─── Push IP to Firebase ──────────────────────────────────────────────────────
+# Paste your exact Tailscale URL here
+TAILSCALE_FUNNEL_URL = "https://picam.tail43c692.ts.net" 
+
 def push_ip_to_firebase():
-    time.sleep(5)
+    time.sleep(5) 
     try:
-        url     = f"{FIREBASE_DB_URL}/settings.json"
-        # Correctly indented payload line
-        payload = {"camera_ip": "https://calorie-radar-graph.ngrok-free.dev"} 
+        url = f"{FIREBASE_DB_URL}/settings.json"
+        # We push the new Funnel URL! 
+        payload = {"camera_ip": TAILSCALE_FUNNEL_URL} 
+
         r = requests.patch(url, json=payload, timeout=10)
         if r.status_code == 200:
-            print("[Firebase] IP pushed successfully")
+            print(f"[Firebase] Public Funnel Pushed: {TAILSCALE_FUNNEL_URL}")
+        else:
+            print(f"[Firebase] Push failed: {r.status_code}")
     except Exception as e:
-        print(f"[Firebase] Error: {e}")
-
-threading.Thread(target=push_ip_to_firebase, daemon=True).start()
-
+        print(f"[ERROR] Firebase sync failed: {e}")
+# ─── Main Entry Point ─────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, threaded=True)
+    # Start the Firebase IP push in the background
+    threading.Thread(target=push_ip_to_firebase, daemon=True).start()
+    
+    print(f"\n[SYSTEM] Server starting on Port 5000...")
+    print(f"[SYSTEM] Public Link: {TAILSCALE_FUNNEL_URL}")
+    
+    # CRITICAL: We use port 5000 because Tailscale is proxying that port!
+    app.run(host='0.0.0.0', port=5000, threaded=True, debug=False)
