@@ -119,10 +119,6 @@
         .fps-pill.active { background: rgba(255,184,79,0.15); border-color: rgba(255,184,79,0.5); color: var(--accent); }
 
         #loading { width: 100%; text-align: center; color: var(--accent); margin-top: 50px; }
-
-        .quality-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
-        .quality-pill { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: var(--muted); font-size: 12px; font-weight: 600; text-align: center; cursor: pointer; transition: 0.2s; }
-        .quality-pill.active { background: rgba(255,184,79,0.15); border-color: rgba(255,184,79,0.5); color: var(--accent); }
     </style>
 </head>
 <body>
@@ -172,18 +168,10 @@
                 <div style="display: flex; flex-direction: column; align-items: center; gap: 15px; width: 100%; margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
                     <div class="data-label" style="width: 100%; text-align: left;">🌿 Plant AI Scanner</div>
 
-                    <div style="width: 100%;">
-                        <div style="font-size: 11px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px;">Capture Mode</div>
-                        <div class="quality-row">
-                            <div class="quality-pill active" id="pill-5mp" onclick="setCaptureMode('5mp')">📷 5MP Full Res<br><span style="font-weight:400;opacity:0.7">Best ID accuracy</span></div>
-                            <div class="quality-pill" id="pill-stream" onclick="setCaptureMode('stream')">🎥 From Stream<br><span style="font-weight:400;opacity:0.7">Faster</span></div>
-                        </div>
-                    </div>
-
                     <img id="plantPreview" src="" style="width: 100%; border-radius: 12px; display: none; border: 1px solid rgba(255,255,255,0.1); aspect-ratio: 4 / 3; object-fit: cover;">
-                    <div id="idStatus" style="font-size: 14px; color: var(--muted); text-align: center;">Ready to scan. 5MP mode gives the most accurate results.</div>
+                    <div id="idStatus" style="font-size: 14px; color: var(--muted); text-align: center;">Ready to scan. High-resolution 5MP mode activated.</div>
                     
-                    <button class="btn" id="scanBtn" style="color: var(--accent); border-color: rgba(255, 184, 79, 0.4);">📷 CAPTURE & IDENTIFY</button>
+                    <button class="btn" id="scanBtn" style="color: var(--accent); border-color: rgba(255, 184, 79, 0.4);">📷 5MP CAPTURE & IDENTIFY</button>
                     <button class="btn" id="exitScannerBtn" style="display: none; background: rgba(255, 69, 58, 0.15); border-color: rgba(255, 69, 58, 0.4); color: #ff453a;">← Exit to Main Application</button>
 
                 </div>
@@ -319,7 +307,6 @@
     let wasStreamRunning = false;
     let nightModeActive = false;
     let cameraSettingsInitialized = false;
-    let captureMode = '5mp';
 
     const VIDEO_MODES = {
         10: { label: "5MP",   fps: [5, 2, 1],      note: "Still mode — best for plant ID, low framerate" },
@@ -389,15 +376,6 @@
     };
 
     renderFpsPills(9, 30);
-    window.setCaptureMode = function(mode) {
-        captureMode = mode;
-        document.querySelectorAll('.quality-pill').forEach(p => p.classList.remove('active'));
-        document.getElementById(`pill-${mode}`).classList.add('active');
-        const status = document.getElementById("idStatus");
-        status.textContent = mode === '5mp'
-            ? "Ready to scan. 5MP mode gives the most accurate results."
-            : "Ready to scan. Will capture directly from stream frame.";
-    };
 
     window.formatFullTime = function(hour, minute) {
         let h = hour % 12 || 12;
@@ -609,9 +587,7 @@
         const btn     = document.getElementById("scanBtn");
         const exitBtn = document.getElementById("exitScannerBtn");
 
-        status.textContent = captureMode === '5mp'
-            ? "Ready to scan. 5MP mode gives the most accurate results."
-            : "Ready to scan. Will capture directly from stream frame.";
+        status.textContent = "Ready to scan. High-resolution 5MP mode activated.";
         status.style.color = "var(--muted)";
         
         preview.style.display = "none";
@@ -632,10 +608,10 @@
         if (isStreamRunning) stopStream();
 
         btn.disabled = true;
-        status.textContent = "📸 Capturing image and querying PlantNet AI... (this may take a few seconds)";
+        status.textContent = "📸 Switching to 5MP & Querying PlantNet AI... (this takes ~5-10 sec)";
 
         try {
-            // Call our new Python endpoint instead of doing it in the browser
+            // Call the Python backend directly (it forces Mode 10 internally)
             const idRes = await fetch(`${activeCameraIp}/identify`);
             
             if (!idRes.ok) {
@@ -649,7 +625,6 @@
                 throw new Error("Plant not recognized. Try better lighting or a closer shot of the leaves.");
             }
 
-            // We hide the preview box because the image was captured directly by the Pi Backend
             preview.style.display = "none";
 
             const bestMatch   = result.results[0];
@@ -697,7 +672,15 @@
         if (!data) return;
 
         if (data.camera_ip && data.camera_ip !== activeCameraIp) {
-            activeCameraIp = data.camera_ip;
+            let ip = data.camera_ip;
+            
+            // SAFETY: Force HTTPS and strip port 5000 if Tailscale Funnel is used
+            if (ip.includes("ts.net")) {
+                ip = ip.replace("http://", "https://");
+                ip = ip.replace(":5000", ""); 
+            }
+            
+            activeCameraIp = ip;
             document.getElementById("camStatus").style.display = "none";
             document.getElementById("streamToggleBtn").style.display = "block";
             syncCameraSettingsFromCloud(data);
