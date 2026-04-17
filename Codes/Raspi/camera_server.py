@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Plant Monitor Camera Server
+Plant Monitor Camera Server (Hardware-Safe Version)
 Raspberry Pi Zero 2W + OV5647 5MP
 """
 
@@ -9,9 +9,13 @@ import time
 import threading
 import requests
 import socket
+import os
 from flask import Flask, Response, request, jsonify, render_template
-from picamera2 import Picamera2
-from libcamera import Transform, controls as libcam_controls
+
+# ─── Camera Global Variables ──────────────────────────────────────────────────
+CAMERA_AVAILABLE = False
+picam2 = None
+cam_lock = threading.Lock()
 
 # ─── Optional GPIO flash LED on pin 18 ───────────────────────────────────────
 try:
@@ -33,12 +37,11 @@ FIREBASE_DB_URL = "https://plant-enclosure-default-rtdb.firebaseio.com"
 # ─── OV5647 supported video modes ─────────────────────────────────────────────
 VIDEO_MODES = {
     10: ((2592, 1944), [5, 2, 1],        "still"),   # 5MP — still only
-    9:  ((1920, 1080), [30],              "video"),   # 1080p @ 30fps
-    8:  ((1280, 720),  [60, 30],          "video"),   # 720p  @ 60 or 30fps
-    6:  ((640,  480),  [90, 60, 30],      "video"),   # 480p  @ 90/60/30fps
+    9:  ((1920, 1080), [30],             "video"),   # 1080p @ 30fps
+    8:  ((1280, 720),  [60, 30],         "video"),   # 720p  @ 60 or 30fps
+    6:  ((640,  480),  [90, 60, 30],     "video"),   # 480p  @ 90/60/30fps
 }
 
-# ─── Camera state ─────────────────────────────────────────────────────────────
 cam_state = {
     "mode_id":    9,
     "fps":        30,
@@ -50,11 +53,9 @@ cam_state = {
     "is_still":   False,
 }
 
-picam2   = Picamera2()
-cam_lock = threading.Lock()
-
-# ─── Configure camera ─────────────────────────────────────────────────────────
+# ─── Configure camera logic (Only runs if camera exists) ──────────────────────
 def build_config(mode_id, fps):
+    from libcamera import Transform
     mode      = VIDEO_MODES[mode_id]
     size      = mode[0]
     cfg_type  = mode[2]
@@ -77,6 +78,7 @@ def build_config(mode_id, fps):
     return cfg
 
 def apply_config(mode_id, fps, settle=1.0):
+    if not CAMERA_AVAILABLE: return
     picam2.stop()
     cfg = build_config(mode_id, fps)
     picam2.configure(cfg)
@@ -87,6 +89,7 @@ def apply_config(mode_id, fps, settle=1.0):
     cam_state["fps"]     = fps
 
 def _apply_controls():
+    if not CAMERA_AVAILABLE: return
     picam2.set_controls({
         "Brightness": cam_state["brightness"],
         "Contrast":   cam_state["contrast"],
@@ -94,11 +97,22 @@ def _apply_controls():
         "AeEnable":   True,
     })
 
-# Boot into 1080p @ 30fps
-cfg = build_config(9, 30)
-picam2.configure(cfg)
-picam2.start()
-time.sleep(2)
+def init_camera():
+    """Safely tries to boot the camera hardware without crashing the Pi."""
+    global picam2, CAMERA_AVAILABLE
+    try:
+        from picamera2 import Picamera2
+        picam2 = Picamera2()
+        cfg = build_config(9, 30)
+        picam2.configure(cfg)
+        picam2.start()
+        time.sleep(2)
+        CAMERA_AVAILABLE = True
+        print("[SYSTEM] Camera hardware detected and active!")
+    except Exception as e:
+        CAMERA_AVAILABLE = False
+        print(f"\n[CRITICAL] Camera missing or ribbon cable loose: {e}")
+        print("[SYSTEM] Running in SENSOR-ONLY fallback mode.\n")
 
 # ─── Flask App ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -131,6 +145,10 @@ def generate_mjpeg():
 
 @app.route("/stream")
 def stream():
+    if not CAMERA_AVAILABLE:
+        # Return a blank/error image or 404 so UI doesn't crash
+        return "Camera offline", 404
+        
     return Response(
         generate_mjpeg(),
         mimetype="multipart/x-mixed-replace; boundary=frame"
@@ -139,6 +157,9 @@ def stream():
 # ─── Full-res 5MP capture (for plant ID) ─────────────────────────────────────
 @app.route("/capture")
 def capture():
+    if not CAMERA_AVAILABLE:
+        return "Camera offline", 404
+
     with cam_lock:
         current_mode = cam_state["mode_id"]
         current_fps  = cam_state["fps"]
@@ -168,6 +189,9 @@ def capture():
 # ─── PlantNet Identification (5MP) ────────────────────────────────────────────
 @app.route("/identify")
 def identify_plant():
+    if not CAMERA_AVAILABLE:
+        return jsonify({"error": "Camera hardware is disconnected. Please plug in the ribbon cable."}), 503
+
     API_KEY = "2b10r2kgy7B3WbTrm7jRs5Jqx"
     
     with cam_lock:
@@ -219,6 +243,9 @@ def flash():
 # ─── Camera action endpoint ───────────────────────────────────────────────────
 @app.route("/action")
 def action():
+    if not CAMERA_AVAILABLE:
+        return "OK", 200 # Pretend it worked so the UI doesn't break
+
     var = request.args.get("var", "")
     val = request.args.get("val", "0")
 
@@ -249,7 +276,6 @@ def push_ip_to_firebase():
     time.sleep(5) 
     try:
         url = f"{FIREBASE_DB_URL}/settings.json"
-        # We push the new Funnel URL! 
         payload = {"camera_ip": TAILSCALE_FUNNEL_URL} 
 
         r = requests.patch(url, json=payload, timeout=10)
@@ -259,13 +285,17 @@ def push_ip_to_firebase():
             print(f"[Firebase] Push failed: {r.status_code}")
     except Exception as e:
         print(f"[ERROR] Firebase sync failed: {e}")
+
 # ─── Main Entry Point ─────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    # Start the Firebase IP push in the background
+    # 1. Try to boot camera safely
+    init_camera()
+
+    # 2. Start the Firebase IP push in the background
     threading.Thread(target=push_ip_to_firebase, daemon=True).start()
     
     print(f"\n[SYSTEM] Server starting on Port 5000...")
     print(f"[SYSTEM] Public Link: {TAILSCALE_FUNNEL_URL}")
     
-    # CRITICAL: We use port 5000 because Tailscale is proxying that port!
+    # 3. Start web server (Proxying via Tailscale Funnel)
     app.run(host='0.0.0.0', port=5000, threaded=True, debug=False)
