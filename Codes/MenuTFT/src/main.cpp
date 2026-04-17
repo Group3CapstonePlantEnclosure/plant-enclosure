@@ -77,10 +77,10 @@ static lv_obj_t * lighting_set_on_btn = NULL;
 static lv_obj_t * lighting_set_off_btn = NULL;
 static lv_obj_t * watering_timer_card = NULL;
 static lv_obj_t * watering_timer_state_label = NULL;
-static lv_obj_t * water_timer_value_roller = NULL;
-static lv_obj_t * water_timer_unit_roller = NULL;
 static lv_obj_t * water_timer_sw = NULL;
 static lv_obj_t * water_timer_reset_btn = NULL;
+static lv_obj_t * water_timer_set_btn = NULL;
+static lv_obj_t * water_timer_set_label = NULL;
 
 // --- TIME PICKER UI VARIABLES ---
 lv_obj_t * time_picker_bg = NULL;
@@ -91,9 +91,15 @@ bool isEditingOnTime = true;
 lv_obj_t * lbl_time_on;
 lv_obj_t * lbl_time_off;
 lv_obj_t * time_picker_title = NULL;
+lv_obj_t * water_picker_bg = NULL;
+lv_obj_t * water_picker_title = NULL;
+lv_obj_t * water_picker_value_roller = NULL;
+lv_obj_t * water_picker_unit_roller = NULL;
 
 void build_wifi_scanner_ui(); 
 void open_time_picker(bool isOnTime);
+void build_water_timer_modal();
+void open_water_timer_picker();
 void build_wifi_password_ui(const char *ssid);
 void close_wifi_overlays(bool restoreTabview);
 void load_wifi_credentials();
@@ -216,6 +222,10 @@ static void update_watering_timer_label() {
 
   if(watering_timer_state_label != NULL) {
     lv_label_set_text_fmt(watering_timer_state_label, "%s\n%s", summary, waterTimerEnabled ? "Timer Enabled" : "Timer Disabled");
+  }
+
+  if(water_timer_set_label != NULL) {
+    lv_label_set_text(water_timer_set_label, summary);
   }
 
   if(dashboard_water_label != NULL) {
@@ -847,21 +857,30 @@ void fix_layout_for_display() {
   }
 
   if(ui_Dashboard) {
+    lv_obj_add_flag(ui_Dashboard, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(ui_Dashboard, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(ui_Dashboard, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
     lv_obj_set_scroll_dir(ui_Dashboard, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(ui_Dashboard, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_style_pad_bottom(ui_Dashboard, 36, 0);
   }
 
   if(ui_env_page) {
+    lv_obj_add_flag(ui_env_page, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(ui_env_page, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(ui_env_page, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+    lv_obj_clear_flag(ui_env_page, LV_OBJ_FLAG_SCROLL_ELASTIC);
+    lv_obj_clear_flag(ui_env_page, LV_OBJ_FLAG_SCROLL_MOMENTUM);
     lv_obj_set_scroll_dir(ui_env_page, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(ui_env_page, LV_SCROLLBAR_MODE_AUTO);
-    lv_obj_set_style_pad_bottom(ui_env_page, 36, 0);
+    lv_obj_set_style_pad_top(ui_env_page, 96, 0);
+    lv_obj_set_style_pad_bottom(ui_env_page, 80, 0);
   }
 
   if(ui_lighting_page) {
+    lv_obj_add_flag(ui_lighting_page, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(ui_lighting_page, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(ui_lighting_page, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
     lv_obj_set_scroll_dir(ui_lighting_page, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(ui_lighting_page, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_style_pad_bottom(ui_lighting_page, 36, 0);
@@ -1052,22 +1071,9 @@ static void water_timer_switch_cb(lv_event_t * e) {
   triggerCloudPush = true;
 }
 
-static void water_timer_value_cb(lv_event_t * e) {
+static void water_timer_set_btn_cb(lv_event_t * e) {
   LV_UNUSED(e);
-  if(water_timer_value_roller == NULL) return;
-  waterIntervalValue = lv_roller_get_selected(water_timer_value_roller) + 1;
-  schedule_next_watering(true);
-  update_watering_timer_label();
-  triggerCloudPush = true;
-}
-
-static void water_timer_unit_cb(lv_event_t * e) {
-  LV_UNUSED(e);
-  if(water_timer_unit_roller == NULL) return;
-  waterIntervalUnit = lv_roller_get_selected(water_timer_unit_roller);
-  schedule_next_watering(true);
-  update_watering_timer_label();
-  triggerCloudPush = true;
+  open_water_timer_picker();
 }
 
 static void water_timer_reset_btn_cb(lv_event_t * e) {
@@ -1353,9 +1359,11 @@ static void ensure_watering_timer_controls() {
   if(ui_env_page == NULL || watering_timer_card != NULL) return;
 
   watering_timer_card = lv_obj_create(ui_env_page);
-  lv_obj_set_size(watering_timer_card, 380, 196);
+  lv_obj_set_size(watering_timer_card, 380, 168);
   lv_obj_align(watering_timer_card, LV_ALIGN_TOP_MID, 0, 224);
   lv_obj_set_style_pad_all(watering_timer_card, 14, 0);
+  lv_obj_add_flag(watering_timer_card, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  lv_obj_add_flag(watering_timer_card, LV_OBJ_FLAG_GESTURE_BUBBLE);
 
   lv_obj_t * title = lv_label_create(watering_timer_card);
   lv_label_set_text(title, "Water Pump Timer");
@@ -1363,21 +1371,19 @@ static void ensure_watering_timer_controls() {
 
   water_timer_sw = lv_switch_create(watering_timer_card);
   lv_obj_align(water_timer_sw, LV_ALIGN_TOP_RIGHT, 0, 0);
+  lv_obj_add_flag(water_timer_sw, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  lv_obj_add_flag(water_timer_sw, LV_OBJ_FLAG_GESTURE_BUBBLE);
   lv_obj_add_event_cb(water_timer_sw, water_timer_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-  water_timer_value_roller = lv_roller_create(watering_timer_card);
-  lv_roller_set_options(water_timer_value_roller, water_value_str, LV_ROLLER_MODE_INFINITE);
-  lv_roller_set_visible_row_count(water_timer_value_roller, 3);
-  lv_obj_set_size(water_timer_value_roller, 110, 102);
-  lv_obj_align(water_timer_value_roller, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-  lv_obj_add_event_cb(water_timer_value_roller, water_timer_value_cb, LV_EVENT_VALUE_CHANGED, NULL);
-
-  water_timer_unit_roller = lv_roller_create(watering_timer_card);
-  lv_roller_set_options(water_timer_unit_roller, water_unit_str, LV_ROLLER_MODE_NORMAL);
-  lv_roller_set_visible_row_count(water_timer_unit_roller, 3);
-  lv_obj_set_size(water_timer_unit_roller, 144, 102);
-  lv_obj_align_to(water_timer_unit_roller, water_timer_value_roller, LV_ALIGN_OUT_RIGHT_BOTTOM, 16, 0);
-  lv_obj_add_event_cb(water_timer_unit_roller, water_timer_unit_cb, LV_EVENT_VALUE_CHANGED, NULL);
+  water_timer_set_btn = lv_btn_create(watering_timer_card);
+  lv_obj_set_size(water_timer_set_btn, 244, 40);
+  lv_obj_align(water_timer_set_btn, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+  lv_obj_add_flag(water_timer_set_btn, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  lv_obj_add_flag(water_timer_set_btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  lv_obj_add_event_cb(water_timer_set_btn, water_timer_set_btn_cb, LV_EVENT_CLICKED, NULL);
+  water_timer_set_label = lv_label_create(water_timer_set_btn);
+  lv_label_set_text(water_timer_set_label, "Water every 1 Day");
+  lv_obj_center(water_timer_set_label);
 
   watering_timer_state_label = lv_label_create(watering_timer_card);
   lv_obj_set_width(watering_timer_state_label, 240);
@@ -1389,13 +1395,12 @@ static void ensure_watering_timer_controls() {
   lv_obj_set_size(water_timer_reset_btn, 40, 40);
   lv_obj_align(water_timer_reset_btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
   lv_obj_set_style_radius(water_timer_reset_btn, 12, 0);
+  lv_obj_add_flag(water_timer_reset_btn, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  lv_obj_add_flag(water_timer_reset_btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
   lv_obj_add_event_cb(water_timer_reset_btn, water_timer_reset_btn_cb, LV_EVENT_CLICKED, NULL);
   lv_obj_t * resetLabel = lv_label_create(water_timer_reset_btn);
   lv_label_set_text(resetLabel, LV_SYMBOL_REFRESH);
   lv_obj_center(resetLabel);
-
-  lv_roller_set_selected(water_timer_value_roller, waterIntervalValue - 1, LV_ANIM_OFF);
-  lv_roller_set_selected(water_timer_unit_roller, waterIntervalUnit, LV_ANIM_OFF);
 }
 
 void build_wifi_password_ui(const char *ssid) {
@@ -1623,6 +1628,73 @@ void open_time_picker(bool isOnTime) {
   lv_obj_clear_flag(time_picker_bg, LV_OBJ_FLAG_HIDDEN);
 }
 
+void build_water_timer_modal() {
+  water_picker_bg = lv_obj_create(lv_scr_act());
+  lv_obj_set_size(water_picker_bg, screenWidth, screenHeight);
+  lv_obj_center(water_picker_bg);
+  lv_obj_set_style_bg_color(water_picker_bg, lv_color_hex(0x000000), 0);
+  lv_obj_set_style_bg_opa(water_picker_bg, LV_OPA_80, 0);
+  lv_obj_set_style_border_width(water_picker_bg, 0, 0);
+  lv_obj_clear_flag(water_picker_bg, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(water_picker_bg, LV_OBJ_FLAG_HIDDEN);
+
+  lv_obj_t * modal = lv_obj_create(water_picker_bg);
+  lv_obj_set_size(modal, 360, 220);
+  lv_obj_center(modal);
+  lv_obj_clear_flag(modal, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_pad_all(modal, 12, 0);
+
+  water_picker_title = lv_label_create(modal);
+  lv_label_set_text(water_picker_title, "Set Water Timer");
+  lv_obj_align(water_picker_title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+  water_picker_value_roller = lv_roller_create(modal);
+  lv_roller_set_options(water_picker_value_roller, water_value_str, LV_ROLLER_MODE_INFINITE);
+  lv_roller_set_visible_row_count(water_picker_value_roller, 3);
+  lv_obj_set_size(water_picker_value_roller, 96, 118);
+  lv_obj_align(water_picker_value_roller, LV_ALIGN_CENTER, -74, -6);
+
+  water_picker_unit_roller = lv_roller_create(modal);
+  lv_roller_set_options(water_picker_unit_roller, water_unit_str, LV_ROLLER_MODE_NORMAL);
+  lv_roller_set_visible_row_count(water_picker_unit_roller, 3);
+  lv_obj_set_size(water_picker_unit_roller, 136, 118);
+  lv_obj_align(water_picker_unit_roller, LV_ALIGN_CENTER, 74, -6);
+
+  lv_obj_t * cancel_btn = lv_btn_create(modal);
+  lv_obj_set_size(cancel_btn, 120, 36);
+  lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+  lv_obj_t * cancel_lbl = lv_label_create(cancel_btn);
+  lv_label_set_text(cancel_lbl, "Cancel");
+  lv_obj_center(cancel_lbl);
+  lv_obj_add_event_cb(cancel_btn, [](lv_event_t * e){ LV_UNUSED(e); lv_obj_add_flag(water_picker_bg, LV_OBJ_FLAG_HIDDEN); }, LV_EVENT_CLICKED, NULL);
+
+  lv_obj_t * save_btn = lv_btn_create(modal);
+  lv_obj_set_size(save_btn, 120, 36);
+  lv_obj_align(save_btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+  lv_obj_t * save_lbl = lv_label_create(save_btn);
+  lv_label_set_text(save_lbl, "Save");
+  lv_obj_center(save_lbl);
+  lv_obj_add_event_cb(save_btn, [](lv_event_t * e){
+    LV_UNUSED(e);
+    if(water_picker_value_roller == NULL || water_picker_unit_roller == NULL) return;
+
+    waterIntervalValue = lv_roller_get_selected(water_picker_value_roller) + 1;
+    waterIntervalUnit = lv_roller_get_selected(water_picker_unit_roller);
+    schedule_next_watering(true);
+    update_watering_timer_label();
+    triggerCloudPush = true;
+    lv_obj_add_flag(water_picker_bg, LV_OBJ_FLAG_HIDDEN);
+  }, LV_EVENT_CLICKED, NULL);
+}
+
+void open_water_timer_picker() {
+  if(water_picker_bg == NULL || water_picker_value_roller == NULL || water_picker_unit_roller == NULL) return;
+
+  lv_roller_set_selected(water_picker_value_roller, waterIntervalValue - 1, LV_ANIM_OFF);
+  lv_roller_set_selected(water_picker_unit_roller, waterIntervalUnit, LV_ANIM_OFF);
+  lv_obj_clear_flag(water_picker_bg, LV_OBJ_FLAG_HIDDEN);
+}
+
 // ==========================================
 // BACKGROUND ARDUINO & CLOUD TASKS
 // ==========================================
@@ -1726,8 +1798,6 @@ void update_ui_from_data() {
     if(waterTimerEnabled) lv_obj_add_state(water_timer_sw, LV_STATE_CHECKED);
     else lv_obj_clear_state(water_timer_sw, LV_STATE_CHECKED);
   }
-  if(water_timer_value_roller) lv_roller_set_selected(water_timer_value_roller, waterIntervalValue - 1, LV_ANIM_OFF);
-  if(water_timer_unit_roller) lv_roller_set_selected(water_timer_unit_roller, waterIntervalUnit, LV_ANIM_OFF);
   update_timer_labels();
 
   if(dm_sw) {
@@ -1981,8 +2051,22 @@ void setup() {
   if(temp_slider) lv_obj_add_event_cb(temp_slider, temp_range_slider_cb, LV_EVENT_ALL, NULL);
   if(hum_slider) lv_obj_add_event_cb(hum_slider, hum_range_slider_cb, LV_EVENT_ALL, NULL);
   if(soil_slider) lv_obj_add_event_cb(soil_slider, soil_range_slider_cb, LV_EVENT_ALL, NULL);
+  if(temp_slider) lv_obj_add_flag(temp_slider, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  if(hum_slider) lv_obj_add_flag(hum_slider, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  if(soil_slider) lv_obj_add_flag(soil_slider, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  if(temp_slider) lv_obj_add_flag(temp_slider, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  if(hum_slider) lv_obj_add_flag(hum_slider, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  if(soil_slider) lv_obj_add_flag(soil_slider, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  if(temp_slider_label) lv_obj_add_flag(temp_slider_label, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  if(hum_slider_label) lv_obj_add_flag(hum_slider_label, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  if(soil_slider_label) lv_obj_add_flag(soil_slider_label, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  if(temp_slider_label) lv_obj_add_flag(temp_slider_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  if(hum_slider_label) lv_obj_add_flag(hum_slider_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  if(soil_slider_label) lv_obj_add_flag(soil_slider_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
   if(lux_slider) {
     lv_slider_set_range(lux_slider, 0, 40000);
+    lv_obj_add_flag(lux_slider, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+    lv_obj_add_flag(lux_slider, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(lux_slider, lux_slider_cb, LV_EVENT_ALL, NULL);
   }
 
@@ -1990,6 +2074,7 @@ void setup() {
   update_ui_from_data();
 
   build_time_picker_modal();
+  build_water_timer_modal();
   schedule_next_watering(true);
 
   xTaskCreatePinnedToCore(uiLoopTask, "UITask", 16384, NULL, 2, &UILoopTaskHandle, 1);
