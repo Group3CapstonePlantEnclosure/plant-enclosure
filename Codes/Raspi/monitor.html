@@ -85,7 +85,7 @@
         .btn:hover { background: rgba(255,255,255,0.15); }
         .btn-half { flex: 1; padding: 10px; font-size: 13px; }
         
-        .pi-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(195, 46, 82, 0.15); border: 1px solid rgba(195, 46, 82, 0.4); color: #e8638a; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: bold; letter-spacing: 0.5px; margin-top: 6px; }
+        .pi-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(195, 46, 82, 0.15); border: 1px solid rgba(195, 46, 82, 0.4); color: #e8638a; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: bold; letter-spacing: 0.5px; margin-top: 6px; transition: 0.3s; }
 
         .res-pill {
             background: rgba(255,255,255,0.05);
@@ -126,7 +126,7 @@
     <div class="header">
         <a href="https://group3capstoneplantenclosure.github.io/plant-enclosure/" class="back-btn" onclick="turnOffFlash()">← Home</a>
         <h2>System Monitor</h2>
-        <div class="pi-badge">🍇 Raspberry Pi Camera</div>
+        <div class="pi-badge" id="camBadge">🍇 Raspberry Pi Camera <span id="camErrorIcon" style="display:none; font-size:12px; margin-left:4px;" title="Camera hardware disconnected!">❌</span></div>
         <div class="live-status" id="liveTag" style="display:none"><div class="dot"></div> Live Auto-Sync</div>
     </div>
 
@@ -286,7 +286,7 @@
                     <button class="btn" id="resetCamBtn" style="margin-top: 20px; border-color: rgba(255,255,255,0.3); font-size: 13px; padding: 10px;">🔄 Reset Defaults</button>
 
                     <div style="margin-top: 20px; padding: 12px; background: rgba(195,46,82,0.08); border: 1px solid rgba(195,46,82,0.2); border-radius: 10px;">
-                        <div style="font-size: 11px; color: #e8638a; font-weight: bold; margin-bottom: 4px;">🫐 Raspberry Pi Camera</div>
+                        <div style="font-size: 11px; color: #e8638a; font-weight: bold; margin-bottom: 4px;">🍇 Raspberry Pi Camera</div>
                         <div style="font-size: 11px; color: var(--muted); line-height: 1.5;">
                             OV5647 · 5MP · 4:3<br>
                             Scan mode uses full 2592×1944 resolution automatically for best plant ID results.
@@ -611,7 +611,6 @@
         status.textContent = "📸 Switching to 5MP & Querying PlantNet AI... (this takes ~5-10 sec)";
 
         try {
-            // Call the Python backend directly (it forces Mode 10 internally)
             const idRes = await fetch(`${activeCameraIp}/identify`);
             
             if (!idRes.ok) {
@@ -644,7 +643,6 @@
             }
             status.innerHTML = resultHTML;
 
-            // Save to Firebase
             await update(settingsRef, {
                 identified_plant:      displayName,
                 identified_scientific: sciName,
@@ -674,7 +672,6 @@
         if (data.camera_ip && data.camera_ip !== activeCameraIp) {
             let ip = data.camera_ip;
             
-            // SAFETY: Force HTTPS and strip port 5000 if Tailscale Funnel is used
             if (ip.includes("ts.net")) {
                 ip = ip.replace("http://", "https://");
                 ip = ip.replace(":5000", ""); 
@@ -684,6 +681,39 @@
             document.getElementById("camStatus").style.display = "none";
             document.getElementById("streamToggleBtn").style.display = "block";
             syncCameraSettingsFromCloud(data);
+
+            // --- 🚀 NEW HARDWARE STATUS CHECK 🚀 ---
+            fetch(`${activeCameraIp}/status`)
+                .then(r => r.json())
+                .then(res => {
+                    const badge = document.getElementById("camBadge");
+                    const icon = document.getElementById("camErrorIcon");
+                    
+                    if (res.camera === false) {
+                        icon.style.display = "inline"; // Show the ❌
+                        badge.style.borderColor = "rgba(255, 69, 58, 0.4)";
+                        badge.style.color = "#ff453a"; // Turn text red
+                        badge.style.background = "rgba(255, 69, 58, 0.15)";
+                        
+                        // Grey out the stream button
+                        document.getElementById("streamToggleBtn").disabled = true;
+                        document.getElementById("streamToggleBtn").style.opacity = "0.5";
+                        document.getElementById("streamToggleBtn").textContent = "Camera Disconnected";
+                    } else {
+                        icon.style.display = "none"; // Hide the ❌
+                        // Reset to normal colors
+                        badge.style.borderColor = "rgba(195, 46, 82, 0.4)";
+                        badge.style.color = "#e8638a";
+                        badge.style.background = "rgba(195, 46, 82, 0.15)";
+                        
+                        document.getElementById("streamToggleBtn").disabled = false;
+                        document.getElementById("streamToggleBtn").style.opacity = "1";
+                        if (!isStreamRunning) {
+                            document.getElementById("streamToggleBtn").textContent = "▶ Start Live Stream";
+                        }
+                    }
+                }).catch(e => console.log("Failed to ping camera hardware status"));
+            // ----------------------------------------
         }
 
         if (data.cam_brightness !== undefined) {

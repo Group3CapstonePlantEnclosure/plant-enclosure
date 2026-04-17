@@ -285,7 +285,11 @@ def push_ip_to_firebase():
             print(f"[Firebase] Push failed: {r.status_code}")
     except Exception as e:
         print(f"[ERROR] Firebase sync failed: {e}")
-
+# ─── Hardware Status Endpoint ─────────────────────────────────────────────────
+@app.route("/status")
+def status():
+    # Tells the website if the ribbon cable is actually detected
+    return jsonify({"camera": CAMERA_AVAILABLE})
 # ─── Main Entry Point ─────────────────────────────────────────────────────────
 if __name__ == "__main__":
     # 1. Try to boot camera safely
