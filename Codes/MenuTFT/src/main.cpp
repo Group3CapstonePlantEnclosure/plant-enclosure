@@ -7,6 +7,7 @@
 #include <WiFiClientSecure.h>
 #include <Preferences.h>
 #include <time.h>
+#include <esp_timer.h>
 #include <FS.h>
 #include <SPIFFS.h>
 
@@ -58,6 +59,7 @@ lv_obj_t * wifi_kb_toggle_btn = NULL;
 lv_obj_t * wifi_kb_toggle_label = NULL;
 lv_obj_t * wifi_pwd_eye_btn = NULL;
 lv_obj_t * wifi_pwd_eye_label = NULL;
+lv_obj_t * wifi_connect_btn = NULL;
 bool wifi_keyboard_hidden = false;
 Preferences wifiPrefs;
 
@@ -65,6 +67,20 @@ static lv_obj_t * network_settings_page = NULL;
 static lv_obj_t * network_connect_btn = NULL;
 static lv_obj_t * network_forget_btn = NULL;
 static lv_obj_t * dashboard_ph_value_label = NULL;
+static lv_obj_t * dashboard_schedule_label = NULL;
+static lv_obj_t * dashboard_schedule_state_label = NULL;
+static lv_obj_t * dashboard_water_label = NULL;
+static lv_obj_t * lighting_timer_card = NULL;
+static lv_obj_t * lighting_timer_title = NULL;
+static lv_obj_t * lighting_timer_state_label = NULL;
+static lv_obj_t * lighting_set_on_btn = NULL;
+static lv_obj_t * lighting_set_off_btn = NULL;
+static lv_obj_t * watering_timer_card = NULL;
+static lv_obj_t * watering_timer_state_label = NULL;
+static lv_obj_t * water_timer_value_roller = NULL;
+static lv_obj_t * water_timer_unit_roller = NULL;
+static lv_obj_t * water_timer_sw = NULL;
+static lv_obj_t * water_timer_reset_btn = NULL;
 
 // --- TIME PICKER UI VARIABLES ---
 lv_obj_t * time_picker_bg = NULL;
@@ -74,6 +90,7 @@ lv_obj_t * roller_ampm;
 bool isEditingOnTime = true;
 lv_obj_t * lbl_time_on;
 lv_obj_t * lbl_time_off;
+lv_obj_t * time_picker_title = NULL;
 
 void build_wifi_scanner_ui(); 
 void open_time_picker(bool isOnTime);
@@ -99,6 +116,15 @@ static void update_network_status_label();
 static void create_network_settings_page();
 static void configure_dashboard_ph_widgets();
 static void fix_network_settings_layout();
+static void show_network_settings_page();
+static void open_menu_root();
+static bool wifi_overlay_active();
+static void update_timer_labels();
+static void ensure_lighting_timer_controls();
+static void ensure_watering_timer_controls();
+static void schedule_next_watering(bool resetFromNow);
+static void update_watering_timer_label();
+static void send_watering_command();
 
 // --- PIN DEFINITIONS ---
 #define TOUCH_IRQ  16  
@@ -137,6 +163,11 @@ bool timerEnabled = false;
 int timeOnHour = 8, timeOnMinute = 0, timeOffHour = 20, timeOffMinute = 0;
 int currentHour = 12, currentMinute = 0, globalBrightness = 10;
 int timeZoneOffset = -5; 
+bool waterTimerEnabled = false;
+int waterIntervalValue = 1;
+int waterIntervalUnit = 1;
+time_t nextWateringEpoch = 0;
+uint64_t nextWateringMillis = 0;
 
 String webLogBuffer = "Device Booted. System initialized.\n";
 unsigned long lastMinuteTick = 0, lastSerialRecv = 0, lastControlCheck = 0;
@@ -162,6 +193,77 @@ WiFiCreds myNetworks[] = {
 const char * mins_str = "00\n01\n02\n03\n04\n05\n06\n07\n08\n09\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n32\n33\n34\n35\n36\n37\n38\n39\n40\n41\n42\n43\n44\n45\n46\n47\n48\n49\n50\n51\n52\n53\n54\n55\n56\n57\n58\n59";
 const char * hrs_str = "01\n02\n03\n04\n05\n06\n07\n08\n09\n10\n11\n12";
 const char * ampm_str = "AM\nPM";
+const char * water_value_str = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30";
+const char * water_unit_str = "Hours\nDays\nWeeks";
+
+static void format_time_12h(int hour24, int minute, char *buffer, size_t bufferSize) {
+  int hour12 = hour24 % 12;
+  if(hour12 == 0) hour12 = 12;
+  snprintf(buffer, bufferSize, "%d:%02d %s", hour12, minute, hour24 >= 12 ? "PM" : "AM");
+}
+
+static uint64_t water_interval_ms() {
+  uint64_t baseHours = (uint64_t)waterIntervalValue;
+  if(waterIntervalUnit == 1) baseHours *= 24UL;
+  else if(waterIntervalUnit == 2) baseHours *= (24UL * 7UL);
+  return baseHours * 3600000ULL;
+}
+
+static void update_watering_timer_label() {
+  char summary[96];
+  const char *unit = waterIntervalUnit == 0 ? "Hour" : (waterIntervalUnit == 1 ? "Day" : "Week");
+  snprintf(summary, sizeof(summary), "Water every %d %s%s", waterIntervalValue, unit, waterIntervalValue == 1 ? "" : "s");
+
+  if(watering_timer_state_label != NULL) {
+    lv_label_set_text_fmt(watering_timer_state_label, "%s\n%s", summary, waterTimerEnabled ? "Timer Enabled" : "Timer Disabled");
+  }
+
+  if(dashboard_water_label != NULL) {
+    char dueBuf[48];
+    if(waterTimerEnabled) {
+      if(nextWateringEpoch > 100000) {
+        struct tm nextInfo;
+        localtime_r(&nextWateringEpoch, &nextInfo);
+        char timeBuf[24];
+        format_time_12h(nextInfo.tm_hour, nextInfo.tm_min, timeBuf, sizeof(timeBuf));
+        snprintf(dueBuf, sizeof(dueBuf), "Next water: %s", timeBuf);
+      } else {
+        uint64_t nowMs = (uint64_t)(esp_timer_get_time() / 1000ULL);
+        if(nextWateringMillis > nowMs) {
+          uint64_t minsLeft = (nextWateringMillis - nowMs) / 60000ULL;
+          snprintf(dueBuf, sizeof(dueBuf), "Next water in %llu min", (unsigned long long)minsLeft);
+        } else {
+          snprintf(dueBuf, sizeof(dueBuf), "Waiting for schedule");
+        }
+      }
+      lv_label_set_text_fmt(dashboard_water_label, "%s\n%s", summary, dueBuf);
+    } else {
+      lv_label_set_text_fmt(dashboard_water_label, "%s\nTimer Disabled", summary);
+    }
+  }
+}
+
+static void update_timer_labels() {
+  char onBuf[24];
+  char offBuf[24];
+  char scheduleBuf[64];
+
+  format_time_12h(timeOnHour, timeOnMinute, onBuf, sizeof(onBuf));
+  format_time_12h(timeOffHour, timeOffMinute, offBuf, sizeof(offBuf));
+  snprintf(scheduleBuf, sizeof(scheduleBuf), "%s to %s", onBuf, offBuf);
+
+  if(lbl_time_on != NULL) lv_label_set_text_fmt(lbl_time_on, "Start: %s", onBuf);
+  if(lbl_time_off != NULL) lv_label_set_text_fmt(lbl_time_off, "Stop: %s", offBuf);
+  if(lighting_timer_state_label != NULL) lv_label_set_text_fmt(lighting_timer_state_label, "%s\n%s", scheduleBuf, timerEnabled ? "Timer Enabled" : "Timer Disabled");
+  if(dashboard_schedule_label != NULL) lv_label_set_text(dashboard_schedule_label, scheduleBuf);
+  if(dashboard_schedule_state_label != NULL) lv_label_set_text(dashboard_schedule_state_label, timerEnabled ? "Timer Enabled" : "Timer Disabled");
+
+  update_watering_timer_label();
+}
+
+static bool wifi_overlay_active() {
+  return wifi_list != NULL || pwd_screen != NULL || isScanning || isConnecting;
+}
 
 // ==========================================
 // UTILS & LOGGING
@@ -182,10 +284,10 @@ void close_wifi_overlays(bool restoreTabview) {
     pwd_ta = NULL;
     kb = NULL;
     conn_status_label = NULL;
-    wifi_status_detail_label = NULL;
     wifi_kb_corner_hide_btn = NULL;
     wifi_kb_toggle_btn = NULL;
     wifi_kb_toggle_label = NULL;
+    wifi_connect_btn = NULL;
     wifi_keyboard_hidden = false;
   }
 
@@ -228,6 +330,25 @@ static void reset_menu_view() {
   if(network_settings_page != NULL) lv_obj_add_flag(network_settings_page, LV_OBJ_FLAG_HIDDEN);
   if(ui_menu_list != NULL) lv_obj_clear_flag(ui_menu_list, LV_OBJ_FLAG_HIDDEN);
   if(ui_btn_back_global != NULL) lv_obj_add_flag(ui_btn_back_global, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void open_menu_root() {
+  close_wifi_overlays(true);
+  reset_menu_view();
+  if(tabview != NULL) lv_tabview_set_act(tabview, 1, LV_ANIM_OFF);
+}
+
+static void show_network_settings_page() {
+  close_wifi_overlays(true);
+  if(tabview != NULL) {
+    lv_tabview_set_act(tabview, 1, LV_ANIM_OFF);
+    lv_obj_clear_flag(tabview, LV_OBJ_FLAG_HIDDEN);
+  }
+  reset_menu_view();
+  if(network_settings_page != NULL) lv_obj_clear_flag(network_settings_page, LV_OBJ_FLAG_HIDDEN);
+  if(ui_menu_list != NULL) lv_obj_add_flag(ui_menu_list, LV_OBJ_FLAG_HIDDEN);
+  if(ui_btn_back_global != NULL) lv_obj_clear_flag(ui_btn_back_global, LV_OBJ_FLAG_HIDDEN);
+  update_network_status_label();
 }
 
 static void update_network_status_label() {
@@ -290,6 +411,12 @@ static void fix_wifi_password_layout() {
       lv_obj_set_size(wifi_kb_toggle_btn, 96, 34);
       lv_obj_align(wifi_kb_toggle_btn, LV_ALIGN_TOP_RIGHT, 0, 174);
     }
+
+    if(wifi_connect_btn != NULL) {
+      lv_obj_set_size(wifi_connect_btn, 46, 46);
+      lv_obj_align_to(wifi_connect_btn, pwd_screen, LV_ALIGN_TOP_RIGHT, -10, 10);
+      lv_obj_set_style_radius(wifi_connect_btn, LV_RADIUS_CIRCLE, 0);
+    }
   }
 
   if(kb != NULL) {
@@ -328,6 +455,11 @@ void save_wifi_credentials(const char *ssid, const char *password) {
 
 bool connect_to_wifi(const char *ssid, const char *password, bool useFastReconnect) {
   if(ssid == NULL || ssid[0] == '\0') return false;
+
+  if(WiFi.status() == WL_CONNECTED && WiFi.SSID().equals(ssid) && WiFi.localIP()[0] != 0) {
+    update_network_status_label();
+    return true;
+  }
 
   isConnecting = true;
   WiFi.mode(WIFI_STA);
@@ -429,6 +561,9 @@ bool push_settings_to_firebase() {
   doc["timeOffMin"] = timeOffMinute;
   doc["globalBrightness"] = globalBrightness;
   doc["timeZoneOffset"] = timeZoneOffset;
+  doc["waterTimerEnabled"] = waterTimerEnabled;
+  doc["waterIntervalValue"] = waterIntervalValue;
+  doc["waterIntervalUnit"] = waterIntervalUnit;
 
   String payload;
   serializeJson(doc, payload);
@@ -587,6 +722,21 @@ void load_settings_from_firebase() {
     sysLog("Timezone updated to UTC " + String(timeZoneOffset));
     changed = true;
   }
+  if(!doc["waterTimerEnabled"].isNull() && waterTimerEnabled != doc["waterTimerEnabled"].as<bool>()) {
+    waterTimerEnabled = doc["waterTimerEnabled"].as<bool>();
+    schedule_next_watering(true);
+    changed = true;
+  }
+  if(!doc["waterIntervalValue"].isNull() && waterIntervalValue != doc["waterIntervalValue"].as<int>()) {
+    waterIntervalValue = constrain(doc["waterIntervalValue"].as<int>(), 1, 30);
+    schedule_next_watering(true);
+    changed = true;
+  }
+  if(!doc["waterIntervalUnit"].isNull() && waterIntervalUnit != doc["waterIntervalUnit"].as<int>()) {
+    waterIntervalUnit = constrain(doc["waterIntervalUnit"].as<int>(), 0, 2);
+    schedule_next_watering(true);
+    changed = true;
+  }
 
   if(!doc["tempLow"].isNull()) {
     float v = doc["tempLow"].as<float>();
@@ -622,8 +772,8 @@ void load_settings_from_firebase() {
   else if(!doc["soil"]["high"].isNull() && fabsf(doc["soil"]["high"].as<float>() - soilHigh) > 0.05f) { soilHigh = doc["soil"]["high"].as<float>(); changed = true; }
   else if(!doc["moisture"]["high"].isNull() && fabsf(doc["moisture"]["high"].as<float>() - soilHigh) > 0.05f) { soilHigh = doc["moisture"]["high"].as<float>(); changed = true; }
 
-  if(!doc["luxThreshold"].isNull() && fabsf(doc["luxThreshold"].as<float>() - luxThreshold) > 0.5f) { luxThreshold = doc["luxThreshold"].as<float>(); changed = true; }
-  else if(!doc["lighting"]["luxThreshold"].isNull() && fabsf(doc["lighting"]["luxThreshold"].as<float>() - luxThreshold) > 0.5f) { luxThreshold = doc["lighting"]["luxThreshold"].as<float>(); changed = true; }
+  if(!doc["luxThreshold"].isNull() && fabsf(doc["luxThreshold"].as<float>() - luxThreshold) > 0.5f) { luxThreshold = constrain(doc["luxThreshold"].as<float>(), 0.0f, 40000.0f); changed = true; }
+  else if(!doc["lighting"]["luxThreshold"].isNull() && fabsf(doc["lighting"]["luxThreshold"].as<float>() - luxThreshold) > 0.5f) { luxThreshold = constrain(doc["lighting"]["luxThreshold"].as<float>(), 0.0f, 40000.0f); changed = true; }
 
   // Live UART sensor values are source-of-truth on ESP32 and should not be overwritten from cloud sync.
 
@@ -639,7 +789,7 @@ void cloudTask(void * parameter) {
   (void)parameter;
 
   for(;;) {
-    if(isScanning || isConnecting) {
+    if(wifi_overlay_active()) {
       vTaskDelay(pdMS_TO_TICKS(200));
       continue;
     }
@@ -696,8 +846,32 @@ void fix_layout_for_display() {
     }
   }
 
+  if(ui_Dashboard) {
+    lv_obj_add_flag(ui_Dashboard, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(ui_Dashboard, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(ui_Dashboard, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_pad_bottom(ui_Dashboard, 36, 0);
+  }
+
+  if(ui_env_page) {
+    lv_obj_add_flag(ui_env_page, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(ui_env_page, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(ui_env_page, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_pad_bottom(ui_env_page, 36, 0);
+  }
+
+  if(ui_lighting_page) {
+    lv_obj_add_flag(ui_lighting_page, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(ui_lighting_page, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(ui_lighting_page, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_pad_bottom(ui_lighting_page, 36, 0);
+  }
+
   fix_network_settings_layout();
   configure_dashboard_ph_widgets();
+  ensure_lighting_timer_controls();
+  ensure_watering_timer_controls();
+  update_timer_labels();
   fix_wifi_list_layout();
   fix_wifi_password_layout();
 }
@@ -793,12 +967,20 @@ void global_back_cb(lv_event_t * e) {
 
 void open_wifi_scanner_cb(lv_event_t * e) {
   LV_UNUSED(e);
-  sysLog("Opening C++ WiFi Scanner...");
-  reset_menu_view();
-  if(network_settings_page != NULL) lv_obj_clear_flag(network_settings_page, LV_OBJ_FLAG_HIDDEN);
-  if(ui_menu_list != NULL) lv_obj_add_flag(ui_menu_list, LV_OBJ_FLAG_HIDDEN);
-  if(ui_btn_back_global != NULL) lv_obj_clear_flag(ui_btn_back_global, LV_OBJ_FLAG_HIDDEN);
-  update_network_status_label();
+  sysLog("Opening network settings...");
+  show_network_settings_page();
+}
+
+static void tabview_tab_buttons_cb(lv_event_t * e) {
+  if(lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+
+  lv_obj_t * btns = lv_event_get_target(e);
+  if(btns == NULL) return;
+
+  uint16_t selected = lv_btnmatrix_get_selected_btn(btns);
+  if(selected == 1) {
+    open_menu_root();
+  }
 }
 
 // ==========================================
@@ -843,6 +1025,68 @@ void soil_range_slider_cb(lv_event_t * e) {
   if(code == LV_EVENT_RELEASED) triggerCloudPush = true;
 }
 
+void lux_slider_cb(lv_event_t * e) {
+  lv_obj_t * slider = lv_event_get_target(e);
+  lv_event_code_t code = lv_event_get_code(e);
+  if(code == LV_EVENT_VALUE_CHANGED || code == LV_EVENT_RELEASED) {
+    luxThreshold = constrain((float)lv_slider_get_value(slider), 0.0f, 40000.0f);
+    if(lux_slider_label) {
+      char buf[32];
+      snprintf(buf, sizeof(buf), "%d lux", (int)lroundf(luxThreshold));
+      lv_label_set_text(lux_slider_label, buf);
+    }
+  }
+  if(code == LV_EVENT_RELEASED) triggerCloudPush = true;
+}
+
+static void timer_switch_cb(lv_event_t * e) {
+  timerEnabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  update_timer_labels();
+  triggerCloudPush = true;
+}
+
+static void water_timer_switch_cb(lv_event_t * e) {
+  waterTimerEnabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  schedule_next_watering(true);
+  update_watering_timer_label();
+  triggerCloudPush = true;
+}
+
+static void water_timer_value_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  if(water_timer_value_roller == NULL) return;
+  waterIntervalValue = lv_roller_get_selected(water_timer_value_roller) + 1;
+  schedule_next_watering(true);
+  update_watering_timer_label();
+  triggerCloudPush = true;
+}
+
+static void water_timer_unit_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  if(water_timer_unit_roller == NULL) return;
+  waterIntervalUnit = lv_roller_get_selected(water_timer_unit_roller);
+  schedule_next_watering(true);
+  update_watering_timer_label();
+  triggerCloudPush = true;
+}
+
+static void water_timer_reset_btn_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  schedule_next_watering(true);
+  update_watering_timer_label();
+  uiNeedsUpdate = true;
+}
+
+static void lighting_set_on_btn_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  open_time_picker(true);
+}
+
+static void lighting_set_off_btn_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  open_time_picker(false);
+}
+
 void dark_mode_switch_cb(lv_event_t * e) {
   lv_obj_t * sw = lv_event_get_target(e);
   isDarkMode = lv_obj_has_state(sw, LV_STATE_CHECKED);
@@ -874,7 +1118,7 @@ static void wifi_connect_now() {
   if(connect_to_wifi(selected_ssid, password, true)) {
     save_wifi_credentials(selected_ssid, password);
     load_settings_from_firebase();
-    close_wifi_overlays(true);
+    open_menu_root();
   }
 }
 
@@ -897,6 +1141,12 @@ static void wifi_textarea_event_cb(lv_event_t * e) {
 static void wifi_cancel_btn_cb(lv_event_t * e) {
   LV_UNUSED(e);
   close_wifi_overlays(false);
+
+  if(wifi_list != NULL) {
+    lv_obj_clear_flag(wifi_list, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    show_network_settings_page();
+  }
 }
 
 static void wifi_toggle_password_eye_cb(lv_event_t * e) {
@@ -962,28 +1212,32 @@ static void create_network_settings_page() {
   network_settings_page = lv_obj_create(ui_Menu);
   lv_obj_remove_style_all(network_settings_page);
   lv_obj_add_flag(network_settings_page, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(network_settings_page, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(network_settings_page, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scroll_dir(network_settings_page, LV_DIR_VER);
+  lv_obj_set_scrollbar_mode(network_settings_page, LV_SCROLLBAR_MODE_AUTO);
+  lv_obj_set_style_pad_top(network_settings_page, 16, 0);
+  lv_obj_set_style_pad_bottom(network_settings_page, 40, 0);
 
   lv_obj_t * title = lv_label_create(network_settings_page);
   lv_label_set_text(title, "Network Settings");
   lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 16);
 
   wifi_status_detail_label = lv_label_create(network_settings_page);
-  lv_obj_set_width(wifi_status_detail_label, 240);
+  lv_obj_set_width(wifi_status_detail_label, 300);
   lv_label_set_long_mode(wifi_status_detail_label, LV_LABEL_LONG_WRAP);
-  lv_obj_align(wifi_status_detail_label, LV_ALIGN_TOP_MID, 0, 52);
+  lv_obj_align(wifi_status_detail_label, LV_ALIGN_TOP_MID, 0, 56);
 
   network_connect_btn = lv_btn_create(network_settings_page);
-  lv_obj_set_size(network_connect_btn, 220, 48);
-  lv_obj_align(network_connect_btn, LV_ALIGN_TOP_MID, 0, 122);
+  lv_obj_set_size(network_connect_btn, 260, 48);
+  lv_obj_align(network_connect_btn, LV_ALIGN_TOP_MID, 0, 138);
   lv_obj_add_event_cb(network_connect_btn, network_connect_btn_cb, LV_EVENT_CLICKED, NULL);
   lv_obj_t * connect_label = lv_label_create(network_connect_btn);
   lv_label_set_text(connect_label, "Network Connect");
   lv_obj_center(connect_label);
 
   network_forget_btn = lv_btn_create(network_settings_page);
-  lv_obj_set_size(network_forget_btn, 220, 48);
-  lv_obj_align(network_forget_btn, LV_ALIGN_TOP_MID, 0, 182);
+  lv_obj_set_size(network_forget_btn, 260, 48);
+  lv_obj_align(network_forget_btn, LV_ALIGN_TOP_MID, 0, 206);
   lv_obj_add_event_cb(network_forget_btn, network_forget_btn_cb, LV_EVENT_CLICKED, NULL);
   lv_obj_t * forget_label = lv_label_create(network_forget_btn);
   lv_label_set_text(forget_label, "Forget WiFi");
@@ -994,28 +1248,154 @@ static void create_network_settings_page() {
 }
 
 static void configure_dashboard_ph_widgets() {
-  if(ui_Dashboard == NULL || ui_pHlabel == NULL || ui_Bar1 == NULL || ui_Image2 == NULL) return;
+  if(ui_Dashboard == NULL || ui_pHlabel == NULL || ui_Bar1 == NULL) return;
 
   if(lv_obj_get_parent(ui_pHlabel) != ui_Dashboard) lv_obj_set_parent(ui_pHlabel, ui_Dashboard);
   if(lv_obj_get_parent(ui_Bar1) != ui_Dashboard) lv_obj_set_parent(ui_Bar1, ui_Dashboard);
-  if(lv_obj_get_parent(ui_Image2) != ui_Dashboard) lv_obj_set_parent(ui_Image2, ui_Dashboard);
+  if(ui_Image2 != NULL) lv_obj_add_flag(ui_Image2, LV_OBJ_FLAG_HIDDEN);
 
   lv_obj_set_x(ui_pHlabel, 12);
-  lv_obj_set_y(ui_pHlabel, 180);
+  lv_obj_set_y(ui_pHlabel, 164);
   lv_obj_set_align(ui_pHlabel, LV_ALIGN_TOP_MID);
 
   lv_obj_set_width(ui_Bar1, 170);
   lv_obj_set_height(ui_Bar1, 12);
   lv_obj_set_x(ui_Bar1, 0);
-  lv_obj_set_y(ui_Bar1, 216);
+  lv_obj_set_y(ui_Bar1, 196);
   lv_obj_set_align(ui_Bar1, LV_ALIGN_TOP_MID);
 
-  lv_obj_set_x(ui_Image2, -86);
-  lv_obj_set_y(ui_Image2, 178);
-  lv_obj_set_align(ui_Image2, LV_ALIGN_TOP_MID);
-  lv_img_set_zoom(ui_Image2, 220);
+  if(dashboard_schedule_label == NULL) {
+    dashboard_schedule_label = lv_label_create(ui_Dashboard);
+    lv_obj_set_width(dashboard_schedule_label, 280);
+    lv_label_set_long_mode(dashboard_schedule_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(dashboard_schedule_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(dashboard_schedule_label, LV_ALIGN_TOP_MID, 0, 228);
+  }
+
+  if(dashboard_schedule_state_label == NULL) {
+    dashboard_schedule_state_label = lv_label_create(ui_Dashboard);
+    lv_obj_set_width(dashboard_schedule_state_label, 280);
+    lv_label_set_long_mode(dashboard_schedule_state_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(dashboard_schedule_state_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(dashboard_schedule_state_label, LV_ALIGN_TOP_MID, 0, 256);
+  }
+
+  if(dashboard_water_label == NULL) {
+    dashboard_water_label = lv_label_create(ui_Dashboard);
+    lv_obj_set_width(dashboard_water_label, 280);
+    lv_label_set_long_mode(dashboard_water_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(dashboard_water_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(dashboard_water_label, LV_ALIGN_TOP_MID, 0, 292);
+  }
 
   dashboard_ph_value_label = ui_pHlabel;
+}
+
+static void ensure_lighting_timer_controls() {
+  if(ui_lighting_page == NULL || lighting_timer_card != NULL) return;
+
+  if(ui_Image1 != NULL) {
+    lv_obj_align(ui_Image1, LV_ALIGN_TOP_MID, 0, 12);
+    lv_img_set_zoom(ui_Image1, 220);
+  }
+  if(ui_LuxLabel != NULL) {
+    lv_obj_align(ui_LuxLabel, LV_ALIGN_TOP_MID, 0, 56);
+  }
+  if(ui_lux_slider != NULL) {
+    lv_obj_set_width(ui_lux_slider, 260);
+    lv_obj_align(ui_lux_slider, LV_ALIGN_TOP_MID, 0, 92);
+  }
+
+  lighting_timer_card = lv_obj_create(ui_lighting_page);
+  lv_obj_set_size(lighting_timer_card, 340, 150);
+  lv_obj_align(lighting_timer_card, LV_ALIGN_TOP_MID, 0, 132);
+  lv_obj_set_style_pad_all(lighting_timer_card, 12, 0);
+
+  lighting_timer_title = lv_label_create(lighting_timer_card);
+  lv_label_set_text(lighting_timer_title, "Lighting Timer");
+  lv_obj_align(lighting_timer_title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+  if(timer_sw == NULL) {
+    timer_sw = lv_switch_create(lighting_timer_card);
+    lv_obj_align(timer_sw, LV_ALIGN_TOP_RIGHT, 0, 0);
+    lv_obj_add_event_cb(timer_sw, timer_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
+  }
+
+  lbl_time_on = lv_label_create(lighting_timer_card);
+  lv_obj_align(lbl_time_on, LV_ALIGN_TOP_LEFT, 0, 34);
+
+  lbl_time_off = lv_label_create(lighting_timer_card);
+  lv_obj_align(lbl_time_off, LV_ALIGN_TOP_LEFT, 0, 60);
+
+  lighting_set_on_btn = lv_btn_create(lighting_timer_card);
+  lv_obj_set_size(lighting_set_on_btn, 132, 36);
+  lv_obj_align(lighting_set_on_btn, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+  lv_obj_add_event_cb(lighting_set_on_btn, lighting_set_on_btn_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t * onBtnLabel = lv_label_create(lighting_set_on_btn);
+  lv_label_set_text(onBtnLabel, "Set Start");
+  lv_obj_center(onBtnLabel);
+
+  lighting_set_off_btn = lv_btn_create(lighting_timer_card);
+  lv_obj_set_size(lighting_set_off_btn, 132, 36);
+  lv_obj_align(lighting_set_off_btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+  lv_obj_add_event_cb(lighting_set_off_btn, lighting_set_off_btn_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t * offBtnLabel = lv_label_create(lighting_set_off_btn);
+  lv_label_set_text(offBtnLabel, "Set Stop");
+  lv_obj_center(offBtnLabel);
+
+  lighting_timer_state_label = lv_label_create(lighting_timer_card);
+  lv_obj_set_width(lighting_timer_state_label, 170);
+  lv_label_set_long_mode(lighting_timer_state_label, LV_LABEL_LONG_WRAP);
+  lv_obj_align(lighting_timer_state_label, LV_ALIGN_TOP_RIGHT, 0, 34);
+}
+
+static void ensure_watering_timer_controls() {
+  if(ui_env_page == NULL || watering_timer_card != NULL) return;
+
+  watering_timer_card = lv_obj_create(ui_env_page);
+  lv_obj_set_size(watering_timer_card, 380, 196);
+  lv_obj_align(watering_timer_card, LV_ALIGN_TOP_MID, 0, 224);
+  lv_obj_set_style_pad_all(watering_timer_card, 14, 0);
+
+  lv_obj_t * title = lv_label_create(watering_timer_card);
+  lv_label_set_text(title, "Water Pump Timer");
+  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+  water_timer_sw = lv_switch_create(watering_timer_card);
+  lv_obj_align(water_timer_sw, LV_ALIGN_TOP_RIGHT, 0, 0);
+  lv_obj_add_event_cb(water_timer_sw, water_timer_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+  water_timer_value_roller = lv_roller_create(watering_timer_card);
+  lv_roller_set_options(water_timer_value_roller, water_value_str, LV_ROLLER_MODE_INFINITE);
+  lv_roller_set_visible_row_count(water_timer_value_roller, 3);
+  lv_obj_set_size(water_timer_value_roller, 110, 102);
+  lv_obj_align(water_timer_value_roller, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+  lv_obj_add_event_cb(water_timer_value_roller, water_timer_value_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+  water_timer_unit_roller = lv_roller_create(watering_timer_card);
+  lv_roller_set_options(water_timer_unit_roller, water_unit_str, LV_ROLLER_MODE_NORMAL);
+  lv_roller_set_visible_row_count(water_timer_unit_roller, 3);
+  lv_obj_set_size(water_timer_unit_roller, 144, 102);
+  lv_obj_align_to(water_timer_unit_roller, water_timer_value_roller, LV_ALIGN_OUT_RIGHT_BOTTOM, 16, 0);
+  lv_obj_add_event_cb(water_timer_unit_roller, water_timer_unit_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+  watering_timer_state_label = lv_label_create(watering_timer_card);
+  lv_obj_set_width(watering_timer_state_label, 240);
+  lv_label_set_long_mode(watering_timer_state_label, LV_LABEL_LONG_WRAP);
+  lv_obj_set_style_text_align(watering_timer_state_label, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(watering_timer_state_label, LV_ALIGN_TOP_MID, 0, 44);
+
+  water_timer_reset_btn = lv_btn_create(watering_timer_card);
+  lv_obj_set_size(water_timer_reset_btn, 40, 40);
+  lv_obj_align(water_timer_reset_btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+  lv_obj_set_style_radius(water_timer_reset_btn, 12, 0);
+  lv_obj_add_event_cb(water_timer_reset_btn, water_timer_reset_btn_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t * resetLabel = lv_label_create(water_timer_reset_btn);
+  lv_label_set_text(resetLabel, LV_SYMBOL_REFRESH);
+  lv_obj_center(resetLabel);
+
+  lv_roller_set_selected(water_timer_value_roller, waterIntervalValue - 1, LV_ANIM_OFF);
+  lv_roller_set_selected(water_timer_unit_roller, waterIntervalUnit, LV_ANIM_OFF);
 }
 
 void build_wifi_password_ui(const char *ssid) {
@@ -1078,6 +1458,22 @@ void build_wifi_password_ui(const char *ssid) {
   lv_obj_center(wifi_kb_toggle_label);
   lv_obj_add_event_cb(wifi_kb_toggle_btn, wifi_toggle_keyboard_btn_cb, LV_EVENT_CLICKED, NULL);
 
+  wifi_connect_btn = lv_btn_create(pwd_screen);
+  lv_obj_set_style_bg_color(wifi_connect_btn, lv_palette_main(LV_PALETTE_BLUE), 0);
+  lv_obj_set_style_bg_opa(wifi_connect_btn, LV_OPA_COVER, 0);
+  lv_obj_set_style_radius(wifi_connect_btn, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_border_width(wifi_connect_btn, 0, 0);
+  lv_obj_add_event_cb(wifi_connect_btn, [](lv_event_t * e){
+    LV_UNUSED(e);
+    wifi_connect_now();
+  }, LV_EVENT_CLICKED, NULL);
+  lv_obj_t * connect_btn_label = lv_label_create(wifi_connect_btn);
+  lv_label_set_text(connect_btn_label, LV_SYMBOL_OK);
+  lv_obj_set_style_text_color(connect_btn_label, lv_color_white(), 0);
+  lv_obj_center(connect_btn_label);
+  lv_obj_set_size(wifi_connect_btn, 46, 46);
+  lv_obj_align(wifi_connect_btn, LV_ALIGN_TOP_RIGHT, -10, 10);
+
   wifi_kb_corner_hide_btn = lv_btn_create(pwd_modal);
   lv_obj_add_event_cb(wifi_kb_corner_hide_btn, wifi_keyboard_corner_hide_cb, LV_EVENT_CLICKED, NULL);
   lv_obj_t * corner_hide_label = lv_label_create(wifi_kb_corner_hide_btn);
@@ -1116,7 +1512,7 @@ void build_wifi_scanner_ui() {
   lv_obj_t * back_btn = lv_list_add_btn(wifi_list, LV_SYMBOL_LEFT, "Back to Settings");
   lv_obj_add_event_cb(back_btn, [](lv_event_t * e){
     LV_UNUSED(e);
-    close_wifi_overlays(true);
+    show_network_settings_page();
   }, LV_EVENT_CLICKED, NULL);
 
   lv_list_add_text(wifi_list, "Available Networks");
@@ -1141,22 +1537,90 @@ void build_time_picker_modal() {
   lv_obj_center(time_picker_bg);
   lv_obj_set_style_bg_color(time_picker_bg, lv_color_hex(0x000000), 0);
   lv_obj_set_style_bg_opa(time_picker_bg, LV_OPA_80, 0);
+  lv_obj_set_style_border_width(time_picker_bg, 0, 0);
+  lv_obj_clear_flag(time_picker_bg, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_flag(time_picker_bg, LV_OBJ_FLAG_HIDDEN);
 
   lv_obj_t * modal = lv_obj_create(time_picker_bg);
-  lv_obj_set_size(modal, screenWidth - 80, screenHeight - 80);
+  lv_obj_set_size(modal, 360, 220);
   lv_obj_center(modal);
+  lv_obj_clear_flag(modal, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_pad_all(modal, 12, 0);
 
-  lv_obj_t * title = lv_label_create(modal);
-  lv_obj_set_user_data(time_picker_bg, title);
-  lv_label_set_text(title, "SELECT TIME");
-  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 10, 5);
+  time_picker_title = lv_label_create(modal);
+  lv_label_set_text(time_picker_title, "Select Time");
+  lv_obj_align(time_picker_title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+  roller_h = lv_roller_create(modal);
+  lv_roller_set_options(roller_h, hrs_str, LV_ROLLER_MODE_NORMAL);
+  lv_roller_set_visible_row_count(roller_h, 3);
+  lv_obj_set_size(roller_h, 84, 118);
+  lv_obj_align(roller_h, LV_ALIGN_CENTER, -96, -6);
+
+  roller_m = lv_roller_create(modal);
+  lv_roller_set_options(roller_m, mins_str, LV_ROLLER_MODE_NORMAL);
+  lv_roller_set_visible_row_count(roller_m, 3);
+  lv_obj_set_size(roller_m, 84, 118);
+  lv_obj_align(roller_m, LV_ALIGN_CENTER, 0, -6);
+
+  roller_ampm = lv_roller_create(modal);
+  lv_roller_set_options(roller_ampm, ampm_str, LV_ROLLER_MODE_INFINITE);
+  lv_roller_set_visible_row_count(roller_ampm, 3);
+  lv_obj_set_size(roller_ampm, 84, 92);
+  lv_obj_align(roller_ampm, LV_ALIGN_CENTER, 96, 0);
 
   lv_obj_t * cancel_btn = lv_btn_create(modal);
-  lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
+  lv_obj_set_size(cancel_btn, 120, 36);
+  lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_LEFT, 0, 0);
   lv_obj_t * cancel_lbl = lv_label_create(cancel_btn);
-  lv_label_set_text(cancel_lbl, "CANCEL");
+  lv_label_set_text(cancel_lbl, "Cancel");
+  lv_obj_center(cancel_lbl);
   lv_obj_add_event_cb(cancel_btn, [](lv_event_t * e){ LV_UNUSED(e); lv_obj_add_flag(time_picker_bg, LV_OBJ_FLAG_HIDDEN); }, LV_EVENT_CLICKED, NULL);
+
+  lv_obj_t * save_btn = lv_btn_create(modal);
+  lv_obj_set_size(save_btn, 120, 36);
+  lv_obj_align(save_btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+  lv_obj_t * save_lbl = lv_label_create(save_btn);
+  lv_label_set_text(save_lbl, "Save");
+  lv_obj_center(save_lbl);
+  lv_obj_add_event_cb(save_btn, [](lv_event_t * e){
+    LV_UNUSED(e);
+
+    int hour12 = lv_roller_get_selected(roller_h) + 1;
+    int minute = lv_roller_get_selected(roller_m);
+    bool isPm = lv_roller_get_selected(roller_ampm) == 1;
+    int hour24 = hour12 % 12;
+    if(isPm) hour24 += 12;
+
+    if(isEditingOnTime) {
+      timeOnHour = hour24;
+      timeOnMinute = minute;
+    } else {
+      timeOffHour = hour24;
+      timeOffMinute = minute;
+    }
+
+    triggerCloudPush = true;
+    update_timer_labels();
+    lv_obj_add_flag(time_picker_bg, LV_OBJ_FLAG_HIDDEN);
+  }, LV_EVENT_CLICKED, NULL);
+}
+
+void open_time_picker(bool isOnTime) {
+  if(time_picker_bg == NULL || roller_h == NULL || roller_m == NULL || roller_ampm == NULL) return;
+
+  isEditingOnTime = isOnTime;
+
+  const int sourceHour = isOnTime ? timeOnHour : timeOffHour;
+  const int sourceMinute = isOnTime ? timeOnMinute : timeOffMinute;
+  int hour12 = sourceHour % 12;
+  if(hour12 == 0) hour12 = 12;
+
+  if(time_picker_title != NULL) lv_label_set_text(time_picker_title, isOnTime ? "Select Start Time" : "Select Stop Time");
+  lv_roller_set_selected(roller_h, hour12 - 1, LV_ANIM_OFF);
+  lv_roller_set_selected(roller_m, sourceMinute, LV_ANIM_OFF);
+  lv_roller_set_selected(roller_ampm, sourceHour >= 12 ? 1 : 0, LV_ANIM_OFF);
+  lv_obj_clear_flag(time_picker_bg, LV_OBJ_FLAG_HIDDEN);
 }
 
 // ==========================================
@@ -1246,11 +1710,26 @@ void update_ui_from_data() {
     snprintf(buf_txt, sizeof(buf_txt), "Soil Moisture: %.0f - %.0f %%", soilLow, soilHigh);
     if(soil_slider_label) lv_label_set_text(soil_slider_label, buf_txt);
   }
+  if(lux_slider) {
+    lv_slider_set_value(lux_slider, (int)lroundf(luxThreshold), LV_ANIM_OFF);
+    if(lux_slider_label) {
+      snprintf(buf_txt, sizeof(buf_txt), "%d lux", (int)lroundf(luxThreshold));
+      lv_label_set_text(lux_slider_label, buf_txt);
+    }
+  }
 
   if(timer_sw) {
     if(timerEnabled) lv_obj_add_state(timer_sw, LV_STATE_CHECKED);
     else lv_obj_clear_state(timer_sw, LV_STATE_CHECKED);
-  } 
+  }
+  if(water_timer_sw) {
+    if(waterTimerEnabled) lv_obj_add_state(water_timer_sw, LV_STATE_CHECKED);
+    else lv_obj_clear_state(water_timer_sw, LV_STATE_CHECKED);
+  }
+  if(water_timer_value_roller) lv_roller_set_selected(water_timer_value_roller, waterIntervalValue - 1, LV_ANIM_OFF);
+  if(water_timer_unit_roller) lv_roller_set_selected(water_timer_unit_roller, waterIntervalUnit, LV_ANIM_OFF);
+  update_timer_labels();
+
   if(dm_sw) {
     if(isDarkMode) lv_obj_add_state(dm_sw, LV_STATE_CHECKED);
     else lv_obj_clear_state(dm_sw, LV_STATE_CHECKED);
@@ -1291,11 +1770,45 @@ void updateClock() {
   }
 }
 
+static void schedule_next_watering(bool resetFromNow) {
+  if(!waterTimerEnabled) {
+    nextWateringEpoch = 0;
+    nextWateringMillis = 0;
+    return;
+  }
+
+  const uint64_t intervalMs = water_interval_ms();
+  time_t now = time(nullptr);
+  if(now > 100000) {
+    if(resetFromNow || nextWateringEpoch <= now) nextWateringEpoch = now + (time_t)(intervalMs / 1000UL);
+  } else {
+    uint64_t monotonicMs = (uint64_t)(esp_timer_get_time() / 1000ULL);
+    if(resetFromNow || nextWateringMillis <= monotonicMs) nextWateringMillis = monotonicMs + intervalMs;
+  }
+}
+
+static void send_watering_command() {
+  Serial2.println("CMD:WATER_PUMP");
+  sysLog("Arduino control -> CMD:WATER_PUMP");
+  schedule_next_watering(true);
+  uiNeedsUpdate = true;
+}
+
 void evaluateControlLogic() {
-  if(lastSerialRecv == 0 || millis() - lastSerialRecv > 15000UL) return;
   if(millis() - lastControlCheck < 5000UL) return;
 
   lastControlCheck = millis();
+
+  if(waterTimerEnabled) {
+    time_t now = time(nullptr);
+    if(now > 100000) {
+      if(nextWateringEpoch <= now) send_watering_command();
+    } else if(nextWateringMillis > 0 && (uint64_t)(esp_timer_get_time() / 1000ULL) >= nextWateringMillis) {
+      send_watering_command();
+    }
+  }
+
+  if(lastSerialRecv == 0 || millis() - lastSerialRecv > 15000UL) return;
 
   const char *peltierCmd = "CMD:PELTIER_OFF";
   if(liveTemp > tempHigh) peltierCmd = "CMD:COOL";
@@ -1450,6 +1963,8 @@ void setup() {
 
   if(tabview) {
     lv_obj_add_event_cb(tabview, tabview_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_t * tab_btns = lv_tabview_get_tab_btns(tabview);
+    if(tab_btns != NULL) lv_obj_add_event_cb(tab_btns, tabview_tab_buttons_cb, LV_EVENT_CLICKED, NULL);
   }
 
   // These are mapped by their on-screen row/labels rather than the autogenerated object names.
@@ -1466,11 +1981,16 @@ void setup() {
   if(temp_slider) lv_obj_add_event_cb(temp_slider, temp_range_slider_cb, LV_EVENT_ALL, NULL);
   if(hum_slider) lv_obj_add_event_cb(hum_slider, hum_range_slider_cb, LV_EVENT_ALL, NULL);
   if(soil_slider) lv_obj_add_event_cb(soil_slider, soil_range_slider_cb, LV_EVENT_ALL, NULL);
+  if(lux_slider) {
+    lv_slider_set_range(lux_slider, 0, 40000);
+    lv_obj_add_event_cb(lux_slider, lux_slider_cb, LV_EVENT_ALL, NULL);
+  }
 
   uiNeedsUpdate = true;
   update_ui_from_data();
 
   build_time_picker_modal();
+  schedule_next_watering(true);
 
   xTaskCreatePinnedToCore(uiLoopTask, "UITask", 16384, NULL, 2, &UILoopTaskHandle, 1);
 

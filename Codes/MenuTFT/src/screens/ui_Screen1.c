@@ -374,7 +374,7 @@ void ui_Screen1_screen_init(void)
     lv_obj_set_width(ui_Soil_moisture_Icon, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_Soil_moisture_Icon, LV_SIZE_CONTENT);    /// 1
     lv_obj_set_x(ui_Soil_moisture_Icon, -108);
-    lv_obj_set_y(ui_Soil_moisture_Icon, -83);
+    lv_obj_set_y(ui_Soil_moisture_Icon, -73);
     lv_obj_set_align(ui_Soil_moisture_Icon, LV_ALIGN_CENTER);
     lv_obj_add_flag(ui_Soil_moisture_Icon, LV_OBJ_FLAG_ADV_HITTEST);     /// Flags
     lv_obj_clear_flag(ui_Soil_moisture_Icon, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
@@ -385,7 +385,7 @@ void ui_Screen1_screen_init(void)
     lv_obj_set_width(ui_Temperature_Icon, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_Temperature_Icon, LV_SIZE_CONTENT);    /// 1
     lv_obj_set_x(ui_Temperature_Icon, -108);
-    lv_obj_set_y(ui_Temperature_Icon, -13);
+    lv_obj_set_y(ui_Temperature_Icon, -3);
     lv_obj_set_align(ui_Temperature_Icon, LV_ALIGN_CENTER);
     lv_obj_add_flag(ui_Temperature_Icon, LV_OBJ_FLAG_ADV_HITTEST);     /// Flags
     lv_obj_clear_flag(ui_Temperature_Icon, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
@@ -396,7 +396,7 @@ void ui_Screen1_screen_init(void)
     lv_obj_set_width(ui_Humidity_Icon, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_Humidity_Icon, LV_SIZE_CONTENT);    /// 1
     lv_obj_set_x(ui_Humidity_Icon, -108);
-    lv_obj_set_y(ui_Humidity_Icon, 57);
+    lv_obj_set_y(ui_Humidity_Icon, 67);
     lv_obj_set_align(ui_Humidity_Icon, LV_ALIGN_CENTER);
     lv_obj_add_flag(ui_Humidity_Icon, LV_OBJ_FLAG_ADV_HITTEST);     /// Flags
     lv_obj_clear_flag(ui_Humidity_Icon, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
@@ -412,16 +412,7 @@ void ui_Screen1_screen_init(void)
     lv_obj_set_y(ui_Bar1, 20);
     lv_obj_set_align(ui_Bar1, LV_ALIGN_CENTER);
 
-    ui_Image2 = lv_img_create(ui_env_page);
-    lv_img_set_src(ui_Image2, &ui_img_white_ph_icon_1_png);
-    lv_obj_set_width(ui_Image2, LV_SIZE_CONTENT);   /// 1
-    lv_obj_set_height(ui_Image2, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_Image2, -50);
-    lv_obj_set_y(ui_Image2, -10);
-    lv_obj_set_align(ui_Image2, LV_ALIGN_CENTER);
-    lv_obj_add_flag(ui_Image2, LV_OBJ_FLAG_ADV_HITTEST);     /// Flags
-    lv_obj_clear_flag(ui_Image2, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
-    lv_img_set_zoom(ui_Image2, 250);
+    ui_Image2 = NULL;
 
     ui_lighting_page = lv_obj_create(ui_Menu);
     lv_obj_remove_style_all(ui_lighting_page);
@@ -432,9 +423,8 @@ void ui_Screen1_screen_init(void)
     lv_obj_clear_flag(ui_lighting_page, LV_OBJ_FLAG_CLICKABLE);      /// Flags
 
     ui_lux_slider = lv_slider_create(ui_lighting_page);
-    lv_slider_set_mode(ui_lux_slider, LV_SLIDER_MODE_RANGE);
+    lv_slider_set_mode(ui_lux_slider, LV_SLIDER_MODE_NORMAL);
     lv_slider_set_value(ui_lux_slider, 0, LV_ANIM_OFF);
-    if(lv_slider_get_mode(ui_lux_slider) == LV_SLIDER_MODE_RANGE) lv_slider_set_left_value(ui_lux_slider, 0, LV_ANIM_OFF);
     lv_obj_set_width(ui_lux_slider, 150);
     lv_obj_set_height(ui_lux_slider, 10);
     lv_obj_set_align(ui_lux_slider, LV_ALIGN_CENTER);
@@ -445,7 +435,7 @@ void ui_Screen1_screen_init(void)
     lv_obj_set_x(ui_LuxLabel, 0);
     lv_obj_set_y(ui_LuxLabel, -20);
     lv_obj_set_align(ui_LuxLabel, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_LuxLabel, "Lux");
+    lv_label_set_text(ui_LuxLabel, "30000 lux");
 
     ui_Image1 = lv_img_create(ui_lighting_page);
     lv_img_set_src(ui_Image1, &ui_img_sun_white_1_png);
