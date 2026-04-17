@@ -45,9 +45,12 @@ lv_obj_t * timer_sw;
 // --- WIFI SETUP UI VARIABLES ---
 lv_obj_t * wifi_list = NULL;
 lv_obj_t * pwd_screen = NULL;
+lv_obj_t * pwd_modal = NULL;
 lv_obj_t * pwd_ta;
 lv_obj_t * kb;
 lv_obj_t * conn_status_label;
+lv_obj_t * wifi_status_detail_label = NULL;
+lv_obj_t * wifi_kb_corner_hide_btn = NULL;
 char selected_ssid[64];
 char saved_ssid[64] = {0};
 char saved_pass[64] = {0};
@@ -57,6 +60,11 @@ lv_obj_t * wifi_pwd_eye_btn = NULL;
 lv_obj_t * wifi_pwd_eye_label = NULL;
 bool wifi_keyboard_hidden = false;
 Preferences wifiPrefs;
+
+static lv_obj_t * network_settings_page = NULL;
+static lv_obj_t * network_connect_btn = NULL;
+static lv_obj_t * network_forget_btn = NULL;
+static lv_obj_t * dashboard_ph_value_label = NULL;
 
 // --- TIME PICKER UI VARIABLES ---
 lv_obj_t * time_picker_bg = NULL;
@@ -83,6 +91,14 @@ void checkSerialSensors();
 void updateClock();
 void evaluateControlLogic();
 void fix_layout_for_display();
+static void fix_wifi_list_layout();
+static void fix_wifi_password_layout();
+static void set_wifi_keyboard_visibility(bool hidden);
+static void reset_menu_view();
+static void update_network_status_label();
+static void create_network_settings_page();
+static void configure_dashboard_ph_widgets();
+static void fix_network_settings_layout();
 
 // --- PIN DEFINITIONS ---
 #define TOUCH_IRQ  16  
@@ -109,7 +125,7 @@ static const uint16_t screenWidth  = 480;
 static const uint16_t screenHeight = 320;
 
 // --- SYSTEM GLOBALS ---
-float liveTemp = 0.0, liveHum = 0.0, liveSoil = 0.0, liveLux = 0.0;
+float liveTemp = 0.0, liveHum = 0.0, liveSoil = 0.0, liveLux = 0.0, livePh = -1.0;
 float tempLow = 68.0, tempHigh = 77.0;
 float humLow = 40.0, humHigh = 80.0;
 float soilLow = 30.0, soilHigh = 70.0;
@@ -162,9 +178,12 @@ void close_wifi_overlays(bool restoreTabview) {
   if(pwd_screen != NULL) {
     lv_obj_del(pwd_screen);
     pwd_screen = NULL;
+    pwd_modal = NULL;
     pwd_ta = NULL;
     kb = NULL;
     conn_status_label = NULL;
+    wifi_status_detail_label = NULL;
+    wifi_kb_corner_hide_btn = NULL;
     wifi_kb_toggle_btn = NULL;
     wifi_kb_toggle_label = NULL;
     wifi_keyboard_hidden = false;
@@ -177,6 +196,110 @@ void close_wifi_overlays(bool restoreTabview) {
 
   if(restoreTabview && tabview != NULL) {
     lv_obj_clear_flag(tabview, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+static void set_wifi_keyboard_visibility(bool hidden) {
+  wifi_keyboard_hidden = hidden;
+
+  if(kb != NULL) {
+    if(hidden) lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN);
+  }
+
+  if(wifi_kb_corner_hide_btn != NULL) {
+    if(hidden) lv_obj_add_flag(wifi_kb_corner_hide_btn, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_clear_flag(wifi_kb_corner_hide_btn, LV_OBJ_FLAG_HIDDEN);
+  }
+
+  if(wifi_kb_toggle_label != NULL) {
+    lv_label_set_text(wifi_kb_toggle_label, hidden ? "Show KB" : "Hide KB");
+  }
+
+  if(!hidden && kb != NULL && pwd_ta != NULL) {
+    _ui_keyboard_set_target(kb, pwd_ta);
+  }
+}
+
+static void reset_menu_view() {
+  if(ui_env_page != NULL) lv_obj_add_flag(ui_env_page, LV_OBJ_FLAG_HIDDEN);
+  if(ui_lighting_page != NULL) lv_obj_add_flag(ui_lighting_page, LV_OBJ_FLAG_HIDDEN);
+  if(ui_display_page != NULL) lv_obj_add_flag(ui_display_page, LV_OBJ_FLAG_HIDDEN);
+  if(network_settings_page != NULL) lv_obj_add_flag(network_settings_page, LV_OBJ_FLAG_HIDDEN);
+  if(ui_menu_list != NULL) lv_obj_clear_flag(ui_menu_list, LV_OBJ_FLAG_HIDDEN);
+  if(ui_btn_back_global != NULL) lv_obj_add_flag(ui_btn_back_global, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void update_network_status_label() {
+  if(wifi_status_detail_label == NULL) return;
+
+  if(WiFi.status() == WL_CONNECTED) {
+    lv_label_set_text_fmt(wifi_status_detail_label, "Connected: %s\nSaved: %s",
+                          WiFi.SSID().c_str(),
+                          saved_ssid[0] != '\0' ? saved_ssid : "None");
+    return;
+  }
+
+  if(saved_ssid[0] != '\0') lv_label_set_text_fmt(wifi_status_detail_label, "Not connected\nSaved: %s", saved_ssid);
+  else lv_label_set_text(wifi_status_detail_label, "Not connected\nSaved: None");
+}
+
+static void fix_network_settings_layout() {
+  if(network_settings_page == NULL) return;
+
+  lv_obj_set_size(network_settings_page, lv_pct(100), lv_pct(100));
+  lv_obj_align(network_settings_page, LV_ALIGN_CENTER, 0, 0);
+}
+
+static void fix_wifi_list_layout() {
+  if(wifi_list == NULL) return;
+
+  lv_obj_set_size(wifi_list, screenWidth - 24, screenHeight - 24);
+  lv_obj_center(wifi_list);
+}
+
+static void fix_wifi_password_layout() {
+  if(pwd_screen == NULL) return;
+
+  lv_obj_set_size(pwd_screen, screenWidth, screenHeight);
+  lv_obj_center(pwd_screen);
+
+  if(pwd_modal != NULL) {
+    const lv_coord_t modal_width = screenWidth - 28;
+    const lv_coord_t modal_height = screenHeight - 18;
+
+    lv_obj_set_size(pwd_modal, modal_width, modal_height);
+    lv_obj_center(pwd_modal);
+
+    if(pwd_ta != NULL) {
+      lv_obj_set_size(pwd_ta, modal_width - 82, 40);
+      lv_obj_align(pwd_ta, LV_ALIGN_TOP_LEFT, 0, 86);
+    }
+
+    if(wifi_pwd_eye_btn != NULL && pwd_ta != NULL) {
+      lv_obj_set_size(wifi_pwd_eye_btn, 46, 40);
+      lv_obj_align_to(wifi_pwd_eye_btn, pwd_ta, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
+    }
+
+    if(conn_status_label != NULL) {
+      lv_obj_set_width(conn_status_label, modal_width - 52);
+      lv_obj_align(conn_status_label, LV_ALIGN_TOP_LEFT, 0, 136);
+    }
+
+    if(wifi_kb_toggle_btn != NULL) {
+      lv_obj_set_size(wifi_kb_toggle_btn, 96, 34);
+      lv_obj_align(wifi_kb_toggle_btn, LV_ALIGN_TOP_RIGHT, 0, 174);
+    }
+  }
+
+  if(kb != NULL) {
+    lv_obj_set_size(kb, screenWidth - 54, 122);
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+  }
+
+  if(wifi_kb_corner_hide_btn != NULL && kb != NULL) {
+    lv_obj_set_size(wifi_kb_corner_hide_btn, 44, 28);
+    lv_obj_align_to(wifi_kb_corner_hide_btn, kb, LV_ALIGN_BOTTOM_LEFT, 6, -6);
   }
 }
 
@@ -213,14 +336,8 @@ bool connect_to_wifi(const char *ssid, const char *password, bool useFastReconne
   if(conn_status_label) lv_label_set_text_fmt(conn_status_label, "Connecting to %s...", ssid);
   sysLog("Connecting to " + String(ssid));
 
-  if(WiFi.status() == WL_CONNECTED && WiFi.SSID() == String(ssid)) {
-    isConnecting = false;
-    if(conn_status_label) lv_label_set_text(conn_status_label, "Already connected.");
-    return true;
-  }
-
-  WiFi.disconnect(false, false);
-  delay(100);
+  WiFi.disconnect(true, true);
+  delay(250);
 
   if(useFastReconnect && rtc_bssid_valid) {
     WiFi.begin(ssid, password, rtc_channel, rtc_bssid, true);
@@ -229,13 +346,18 @@ bool connect_to_wifi(const char *ssid, const char *password, bool useFastReconne
   }
 
   unsigned long start = millis();
-  while(WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
+  wl_status_t status = WL_IDLE_STATUS;
+  while(millis() - start < 15000) {
+    status = WiFi.status();
+    if(status == WL_CONNECTED && WiFi.localIP()[0] != 0) break;
+    if(status == WL_CONNECT_FAILED || status == WL_NO_SSID_AVAIL) break;
     delay(250);
   }
 
   isConnecting = false;
 
-  if(WiFi.status() == WL_CONNECTED) {
+  status = WiFi.status();
+  if(status == WL_CONNECTED && WiFi.localIP()[0] != 0) {
     const uint8_t *bssid = WiFi.BSSID();
     if(bssid != NULL) {
       memcpy(rtc_bssid, bssid, sizeof(rtc_bssid));
@@ -246,13 +368,19 @@ bool connect_to_wifi(const char *ssid, const char *password, bool useFastReconne
     lastMinuteTick = 0;
     sysLog("WiFi connected. IP: " + WiFi.localIP().toString());
     if(conn_status_label) lv_label_set_text(conn_status_label, "Connected successfully.");
+    update_network_status_label();
     uiNeedsUpdate = true;
     return true;
   }
 
   rtc_bssid_valid = 0;
   sysLog("WiFi connection failed for " + String(ssid));
-  if(conn_status_label) lv_label_set_text(conn_status_label, "Connection failed. Check the password.");
+  WiFi.disconnect(true, true);
+  if(conn_status_label) {
+    if(status == WL_NO_SSID_AVAIL) lv_label_set_text(conn_status_label, "Network not found.");
+    else lv_label_set_text(conn_status_label, "Connection failed. Check the password.");
+  }
+  update_network_status_label();
   return false;
 }
 
@@ -342,6 +470,10 @@ bool push_live_values_to_firebase() {
   doc["soilMoisture"] = liveSoil;
   doc["liveLux"] = liveLux;
   doc["currentLux"] = liveLux;
+  if(livePh >= 0.0f) {
+    doc["livePh"] = livePh;
+    doc["currentPh"] = livePh;
+  }
 
   String payload;
   serializeJson(doc, payload);
@@ -545,12 +677,29 @@ void fix_layout_for_display() {
   if(ui_status_bar) {
     lv_obj_set_size(ui_status_bar, screenWidth, 30);
     lv_obj_align(ui_status_bar, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_style_pad_left(ui_status_bar, 8, 0);
+    lv_obj_set_style_pad_right(ui_status_bar, 8, 0);
+  }
+
+  if(ui_wifistatuslabel) {
+    lv_obj_align(ui_wifistatuslabel, LV_ALIGN_RIGHT_MID, -8, 0);
   }
 
   if(ui_TabView1) {
     lv_obj_set_size(ui_TabView1, screenWidth, screenHeight - 30);
     lv_obj_align(ui_TabView1, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    lv_obj_t * tab_content = lv_tabview_get_content(ui_TabView1);
+    if(tab_content != NULL) {
+      lv_obj_clear_flag(tab_content, LV_OBJ_FLAG_SCROLLABLE);
+      lv_obj_set_scrollbar_mode(tab_content, LV_SCROLLBAR_MODE_OFF);
+    }
   }
+
+  fix_network_settings_layout();
+  configure_dashboard_ph_widgets();
+  fix_wifi_list_layout();
+  fix_wifi_password_layout();
 }
 
 // ==========================================
@@ -637,17 +786,19 @@ void my_touchpad_read(lv_indev_drv_t * indev_driver, lv_indev_data_t * data)
 // ==========================================
 
 void global_back_cb(lv_event_t * e) {
-    if(ui_env_page != NULL) lv_obj_add_flag(ui_env_page, LV_OBJ_FLAG_HIDDEN);
-    if(ui_lighting_page != NULL) lv_obj_add_flag(ui_lighting_page, LV_OBJ_FLAG_HIDDEN);
-    if(ui_display_page != NULL) lv_obj_add_flag(ui_display_page, LV_OBJ_FLAG_HIDDEN);
+    reset_menu_view();
     lv_obj_t * btn = lv_event_get_target(e);
     lv_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
-    if(ui_menu_list != NULL) lv_obj_clear_flag(ui_menu_list, LV_OBJ_FLAG_HIDDEN);
 }
 
 void open_wifi_scanner_cb(lv_event_t * e) {
+  LV_UNUSED(e);
   sysLog("Opening C++ WiFi Scanner...");
-  build_wifi_scanner_ui(); 
+  reset_menu_view();
+  if(network_settings_page != NULL) lv_obj_clear_flag(network_settings_page, LV_OBJ_FLAG_HIDDEN);
+  if(ui_menu_list != NULL) lv_obj_add_flag(ui_menu_list, LV_OBJ_FLAG_HIDDEN);
+  if(ui_btn_back_global != NULL) lv_obj_clear_flag(ui_btn_back_global, LV_OBJ_FLAG_HIDDEN);
+  update_network_status_label();
 }
 
 // ==========================================
@@ -733,20 +884,13 @@ static void wifi_keyboard_event_cb(lv_event_t * e) {
   if(code == LV_EVENT_READY) {
     wifi_connect_now();
   } else if(code == LV_EVENT_CANCEL) {
-    if(kb != NULL) {
-      lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
-      wifi_keyboard_hidden = true;
-      if(wifi_kb_toggle_label) lv_label_set_text(wifi_kb_toggle_label, "Show KB");
-    }
+    set_wifi_keyboard_visibility(true);
   }
 }
 
 static void wifi_textarea_event_cb(lv_event_t * e) {
   if(lv_event_get_code(e) == LV_EVENT_CLICKED && kb != NULL) {
-    lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN);
-    wifi_keyboard_hidden = false;
-    if(wifi_kb_toggle_label) lv_label_set_text(wifi_kb_toggle_label, "Hide KB");
-    _ui_keyboard_set_target(kb, pwd_ta);
+    set_wifi_keyboard_visibility(false);
   }
 }
 
@@ -768,15 +912,110 @@ static void wifi_toggle_keyboard_btn_cb(lv_event_t * e) {
   LV_UNUSED(e);
   if(kb == NULL || wifi_kb_toggle_label == NULL) return;
 
-  wifi_keyboard_hidden = !wifi_keyboard_hidden;
-  if(wifi_keyboard_hidden) {
-    lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
-    lv_label_set_text(wifi_kb_toggle_label, "Show KB");
-  } else {
-    lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN);
-    lv_label_set_text(wifi_kb_toggle_label, "Hide KB");
-    _ui_keyboard_set_target(kb, pwd_ta);
+  set_wifi_keyboard_visibility(!wifi_keyboard_hidden);
+}
+
+static void wifi_keyboard_corner_hide_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  set_wifi_keyboard_visibility(true);
+}
+
+static void network_connect_btn_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  if(network_settings_page != NULL) lv_obj_add_flag(network_settings_page, LV_OBJ_FLAG_HIDDEN);
+  build_wifi_scanner_ui();
+}
+
+static void forget_wifi_credentials() {
+  wifiPrefs.begin("wifi", false);
+  wifiPrefs.clear();
+  wifiPrefs.end();
+
+  saved_ssid[0] = '\0';
+  saved_pass[0] = '\0';
+  selected_ssid[0] = '\0';
+  rtc_bssid_valid = 0;
+  rtc_ssid_index = -1;
+  WiFi.disconnect(true, true);
+  sysLog("Saved WiFi credentials cleared.");
+  update_network_status_label();
+  uiNeedsUpdate = true;
+}
+
+static void network_forget_btn_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  forget_wifi_credentials();
+}
+
+static void tabview_changed_cb(lv_event_t * e) {
+  if(lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
+
+  lv_obj_t * tv = lv_event_get_target(e);
+  if(lv_tabview_get_tab_act(tv) == 1) {
+    reset_menu_view();
   }
+}
+
+static void create_network_settings_page() {
+  if(ui_Menu == NULL || network_settings_page != NULL) return;
+
+  network_settings_page = lv_obj_create(ui_Menu);
+  lv_obj_remove_style_all(network_settings_page);
+  lv_obj_add_flag(network_settings_page, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(network_settings_page, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t * title = lv_label_create(network_settings_page);
+  lv_label_set_text(title, "Network Settings");
+  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 16);
+
+  wifi_status_detail_label = lv_label_create(network_settings_page);
+  lv_obj_set_width(wifi_status_detail_label, 240);
+  lv_label_set_long_mode(wifi_status_detail_label, LV_LABEL_LONG_WRAP);
+  lv_obj_align(wifi_status_detail_label, LV_ALIGN_TOP_MID, 0, 52);
+
+  network_connect_btn = lv_btn_create(network_settings_page);
+  lv_obj_set_size(network_connect_btn, 220, 48);
+  lv_obj_align(network_connect_btn, LV_ALIGN_TOP_MID, 0, 122);
+  lv_obj_add_event_cb(network_connect_btn, network_connect_btn_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t * connect_label = lv_label_create(network_connect_btn);
+  lv_label_set_text(connect_label, "Network Connect");
+  lv_obj_center(connect_label);
+
+  network_forget_btn = lv_btn_create(network_settings_page);
+  lv_obj_set_size(network_forget_btn, 220, 48);
+  lv_obj_align(network_forget_btn, LV_ALIGN_TOP_MID, 0, 182);
+  lv_obj_add_event_cb(network_forget_btn, network_forget_btn_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t * forget_label = lv_label_create(network_forget_btn);
+  lv_label_set_text(forget_label, "Forget WiFi");
+  lv_obj_center(forget_label);
+
+  update_network_status_label();
+  fix_network_settings_layout();
+}
+
+static void configure_dashboard_ph_widgets() {
+  if(ui_Dashboard == NULL || ui_pHlabel == NULL || ui_Bar1 == NULL || ui_Image2 == NULL) return;
+
+  if(lv_obj_get_parent(ui_pHlabel) != ui_Dashboard) lv_obj_set_parent(ui_pHlabel, ui_Dashboard);
+  if(lv_obj_get_parent(ui_Bar1) != ui_Dashboard) lv_obj_set_parent(ui_Bar1, ui_Dashboard);
+  if(lv_obj_get_parent(ui_Image2) != ui_Dashboard) lv_obj_set_parent(ui_Image2, ui_Dashboard);
+
+  lv_obj_set_x(ui_pHlabel, 12);
+  lv_obj_set_y(ui_pHlabel, 180);
+  lv_obj_set_align(ui_pHlabel, LV_ALIGN_TOP_MID);
+
+  lv_obj_set_width(ui_Bar1, 170);
+  lv_obj_set_height(ui_Bar1, 12);
+  lv_obj_set_x(ui_Bar1, 0);
+  lv_obj_set_y(ui_Bar1, 216);
+  lv_obj_set_align(ui_Bar1, LV_ALIGN_TOP_MID);
+
+  lv_obj_set_x(ui_Image2, -86);
+  lv_obj_set_y(ui_Image2, 178);
+  lv_obj_set_align(ui_Image2, LV_ALIGN_TOP_MID);
+  lv_img_set_zoom(ui_Image2, 220);
+
+  dashboard_ph_value_label = ui_pHlabel;
 }
 
 void build_wifi_password_ui(const char *ssid) {
@@ -786,20 +1025,16 @@ void build_wifi_password_ui(const char *ssid) {
   close_wifi_overlays(false);
 
   pwd_screen = lv_obj_create(lv_scr_act());
-  lv_obj_set_size(pwd_screen, screenWidth, screenHeight);
-  lv_obj_center(pwd_screen);
   lv_obj_set_style_bg_color(pwd_screen, lv_color_hex(0x000000), 0);
   lv_obj_set_style_bg_opa(pwd_screen, LV_OPA_70, 0);
   lv_obj_set_style_border_width(pwd_screen, 0, 0);
   lv_obj_clear_flag(pwd_screen, LV_OBJ_FLAG_SCROLLABLE);
 
-  lv_obj_t * modal = lv_obj_create(pwd_screen);
-  lv_obj_set_size(modal, screenWidth - 28, screenHeight - 18);
-  lv_obj_center(modal);
-  lv_obj_clear_flag(modal, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_set_style_pad_all(modal, 8, 0);
+  pwd_modal = lv_obj_create(pwd_screen);
+  lv_obj_clear_flag(pwd_modal, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_pad_all(pwd_modal, 8, 0);
 
-  lv_obj_t * back_btn = lv_btn_create(modal);
+  lv_obj_t * back_btn = lv_btn_create(pwd_modal);
   lv_obj_set_size(back_btn, 52, 32);
   lv_obj_align(back_btn, LV_ALIGN_TOP_LEFT, 0, 0);
   lv_obj_t * back_lbl = lv_label_create(back_btn);
@@ -807,19 +1042,17 @@ void build_wifi_password_ui(const char *ssid) {
   lv_obj_center(back_lbl);
   lv_obj_add_event_cb(back_btn, wifi_cancel_btn_cb, LV_EVENT_CLICKED, NULL);
 
-  lv_obj_t * title = lv_label_create(modal);
+  lv_obj_t * title = lv_label_create(pwd_modal);
   lv_label_set_text(title, "Connect to WiFi");
   lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
 
-  lv_obj_t * ssid_label = lv_label_create(modal);
+  lv_obj_t * ssid_label = lv_label_create(pwd_modal);
   lv_obj_set_width(ssid_label, screenWidth - 80);
   lv_label_set_long_mode(ssid_label, LV_LABEL_LONG_WRAP);
   lv_label_set_text_fmt(ssid_label, "SSID: %s", ssid);
   lv_obj_align(ssid_label, LV_ALIGN_TOP_LEFT, 0, 42);
 
-  pwd_ta = lv_textarea_create(modal);
-  lv_obj_set_size(pwd_ta, screenWidth - 110, 40);
-  lv_obj_align(pwd_ta, LV_ALIGN_TOP_LEFT, 0, 86);
+  pwd_ta = lv_textarea_create(pwd_modal);
   lv_textarea_set_placeholder_text(pwd_ta, "Enter WiFi password");
   lv_textarea_set_password_mode(pwd_ta, true);
   lv_textarea_set_one_line(pwd_ta, true);
@@ -829,38 +1062,37 @@ void build_wifi_password_ui(const char *ssid) {
     lv_textarea_set_text(pwd_ta, saved_pass);
   }
 
-  wifi_pwd_eye_btn = lv_btn_create(modal);
-  lv_obj_set_size(wifi_pwd_eye_btn, 46, 40);
-  lv_obj_align_to(wifi_pwd_eye_btn, pwd_ta, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
+  wifi_pwd_eye_btn = lv_btn_create(pwd_modal);
   wifi_pwd_eye_label = lv_label_create(wifi_pwd_eye_btn);
   lv_label_set_text(wifi_pwd_eye_label, LV_SYMBOL_EYE_OPEN);
   lv_obj_center(wifi_pwd_eye_label);
   lv_obj_add_event_cb(wifi_pwd_eye_btn, wifi_toggle_password_eye_cb, LV_EVENT_CLICKED, NULL);
 
-  conn_status_label = lv_label_create(modal);
-  lv_obj_set_width(conn_status_label, screenWidth - 80);
+  conn_status_label = lv_label_create(pwd_modal);
   lv_label_set_long_mode(conn_status_label, LV_LABEL_LONG_WRAP);
   lv_label_set_text(conn_status_label, "Tap the password field to show the keyboard. Use the keyboard checkmark to connect.");
-  lv_obj_align(conn_status_label, LV_ALIGN_TOP_LEFT, 0, 136);
 
-  wifi_kb_toggle_btn = lv_btn_create(modal);
-  lv_obj_set_size(wifi_kb_toggle_btn, 96, 34);
-  lv_obj_align(wifi_kb_toggle_btn, LV_ALIGN_TOP_RIGHT, 0, 174);
+  wifi_kb_toggle_btn = lv_btn_create(pwd_modal);
   wifi_kb_toggle_label = lv_label_create(wifi_kb_toggle_btn);
   lv_label_set_text(wifi_kb_toggle_label, "Show KB");
   lv_obj_center(wifi_kb_toggle_label);
   lv_obj_add_event_cb(wifi_kb_toggle_btn, wifi_toggle_keyboard_btn_cb, LV_EVENT_CLICKED, NULL);
 
-  kb = lv_keyboard_create(modal);
-  lv_obj_set_size(kb, screenWidth - 54, 122);
-  lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+  wifi_kb_corner_hide_btn = lv_btn_create(pwd_modal);
+  lv_obj_add_event_cb(wifi_kb_corner_hide_btn, wifi_keyboard_corner_hide_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t * corner_hide_label = lv_label_create(wifi_kb_corner_hide_btn);
+  lv_label_set_text(corner_hide_label, LV_SYMBOL_KEYBOARD);
+  lv_obj_center(corner_hide_label);
+
+  kb = lv_keyboard_create(pwd_modal);
   lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_LOWER);
   lv_obj_add_event_cb(kb, wifi_keyboard_event_cb, LV_EVENT_READY, NULL);
   lv_obj_add_event_cb(kb, wifi_keyboard_event_cb, LV_EVENT_CANCEL, NULL);
   _ui_keyboard_set_target(kb, pwd_ta);
 
-  wifi_keyboard_hidden = true;
-  lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
+  set_wifi_keyboard_visibility(true);
+
+  fix_wifi_password_layout();
 }
 
 void build_wifi_scanner_ui() {
@@ -879,8 +1111,7 @@ void build_wifi_scanner_ui() {
   if(CloudTaskHandle != NULL) vTaskResume(CloudTaskHandle);
 
   wifi_list = lv_list_create(lv_scr_act());
-  lv_obj_set_size(wifi_list, screenWidth - 28, screenHeight - 82);
-  lv_obj_align(wifi_list, LV_ALIGN_BOTTOM_MID, 0, -4);
+  fix_wifi_list_layout();
 
   lv_obj_t * back_btn = lv_list_add_btn(wifi_list, LV_SYMBOL_LEFT, "Back to Settings");
   lv_obj_add_event_cb(back_btn, [](lv_event_t * e){
@@ -953,6 +1184,16 @@ void update_ui_from_data() {
     snprintf(buf_txt, sizeof(buf_txt), "Light: %.0f lux", liveLux);
     lv_label_set_text(ui_lux_label, buf_txt);
   }
+  if(dashboard_ph_value_label) {
+    if(livePh >= 0.0f) snprintf(buf_txt, sizeof(buf_txt), "pH: %.2f", livePh);
+    else snprintf(buf_txt, sizeof(buf_txt), "pH: --.--");
+    lv_label_set_text(dashboard_ph_value_label, buf_txt);
+  }
+  if(ui_Bar1) {
+    int ph_value = livePh >= 0.0f ? (int)lroundf(fminf(fmaxf(livePh, 0.0f), 14.0f)) : 0;
+    lv_bar_set_value(ui_Bar1, ph_value, LV_ANIM_OFF);
+  }
+  update_network_status_label();
 
   // UART status indicator on dashboard
   static lv_obj_t * uart_status_label = NULL;
@@ -1120,6 +1361,11 @@ void checkSerialSensors() {
       Serial.print("  -> liveSoil = "); Serial.println(liveSoil);
       changed = true;
     }
+    if(parseTaggedFloat(data, "PH:", value) || parseTaggedFloat(data, "pH:", value) || parseTaggedFloat(data, "P:", value)) {
+      livePh = fminf(fmaxf(value, 0.0f), 14.0f);
+      Serial.print("  -> livePh = "); Serial.println(livePh);
+      changed = true;
+    }
 
     if(changed) {
       lastSerialRecv = millis();
@@ -1199,6 +1445,12 @@ void setup() {
 
   // --- MAP SQUARELINE OBJECTS ---
   tabview = ui_TabView1;
+  create_network_settings_page();
+  configure_dashboard_ph_widgets();
+
+  if(tabview) {
+    lv_obj_add_event_cb(tabview, tabview_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
+  }
 
   // These are mapped by their on-screen row/labels rather than the autogenerated object names.
   soil_slider = ui_temp_slider;

@@ -3,9 +3,15 @@ SET(SOURCES screens/ui_Screen1.c
     components/ui_comp_hook.c
     ui_helpers.c
     ui_events.c
-    images/ui_img_waterdroplet_white_png.c
-    images/ui_img_temp_icon_png.c
-    images/ui_img_humidity_icon_png.c
-    images/ui_img_sun_white_png.c)
+    images/ui_img_waterdroplet_white_1_png.c
+    images/ui_img_temp_icon_1_png.c
+    images/ui_img_humidity_icon_3_png.c
+    images/ui_img_white_ph_icon_1_png.c
+    images/ui_img_sun_white_1_png.c
+    images/ui_img_3c4ba157_white_32x32_png.c
+    images/ui_img_white_png_32x32_png.c
+    images/ui_img_175872_white_32x32_png.c
+    images/ui_img_sun_white_short_rays_32x32_png.c
+    images/ui_img_water_pump_white_32x32_png.c)
 
 add_library(ui ${SOURCES})
