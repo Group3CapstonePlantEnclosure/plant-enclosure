@@ -11,12 +11,12 @@
 // ------------------- HARDWARE PINS -------------------
 #define LIGHT_PWM_PIN 9
 const int phPin = A0;
-
 // --- Peltier & Fan Pins ---
 const uint8_t R_EN = 8;
-const uint8_t L_EN = 7;           // Pin 7 to avoid conflict with LIGHT_PWM_PIN
+const uint8_t L_EN = 7; // Pin 7 to avoid conflict with LIGHT_PWM_PIN
 const uint8_t RPWM = 10;
 const uint8_t LPWM = 11;
+
 const uint8_t TOP_FAN_PIN = 5;    // Replaced old PELTIER_IN2
 const uint8_t BOTTOM_FAN_PIN = 6; 
 
@@ -28,16 +28,17 @@ BTS7960 motorController(L_EN, R_EN, LPWM, RPWM);
 // ------------------- PELTIER VARIABLES ---------------
 elapsedMillis slowPwmTimer;
 const unsigned long PWM_PERIOD = 2000; // 2-second cycle
-const float DUTY_CYCLE = 0.83;         // 83% duty cycle to limit to ~5A
+const float DUTY_CYCLE = 0.83; // 83% duty cycle to limit to ~5A
 const unsigned long ON_TIME = PWM_PERIOD * DUTY_CYCLE;
 
 enum Mode { COOLING, HEATING, OFF };
-Mode currentMode = OFF; 
+Mode currentMode = OFF;
 
 // ------------------- LIGHT CONTROL VARIABLES ---------
 float lowLuxThreshold  = 150.0;  
 float highLuxThreshold = 250.0;
-int level = 3;                   
+int level = 3;
+
 bool autoMode = true;
 bool ledOn = false;
 
@@ -47,7 +48,8 @@ const int numReadings = 10;
 int readings[numReadings];
 int readIndex = 0;              
 long total = 0;
-int average = 0;                
+int average = 0;
+
 float phValue = 0.0;
 unsigned long lastPhUpdate = 0;
 const long phInterval = 500;
@@ -91,13 +93,13 @@ void setPeltierMode(Mode newMode) {
   if (newMode == HEATING) {
     if (currentMode == COOLING) applySafetyPause();
     else if (currentMode == OFF) applyStartupDelay();
-    
+
     currentMode = HEATING;
     slowPwmTimer = 0; 
     analogWrite(TOP_FAN_PIN, 255);    // Large top fan FULL BLAST
-    analogWrite(BOTTOM_FAN_PIN, 64);   // Small bottom fan SLOW
+    analogWrite(BOTTOM_FAN_PIN, 64);  // Small bottom fan SLOW
     Serial.println(">>> Peltier Mode: HEATING");
-    
+
   } else if (newMode == COOLING) {
     if (currentMode == HEATING) applySafetyPause();
     else if (currentMode == OFF) applyStartupDelay();
@@ -105,9 +107,9 @@ void setPeltierMode(Mode newMode) {
     currentMode = COOLING;
     slowPwmTimer = 0; 
     analogWrite(TOP_FAN_PIN, 255);    // Large top fan FULL BLAST
-    analogWrite(BOTTOM_FAN_PIN, 64);   // Small bottom fan SLOW
+    analogWrite(BOTTOM_FAN_PIN, 64);  // Small bottom fan SLOW
     Serial.println(">>> Peltier Mode: COOLING");
-    
+
   } else if (newMode == OFF) {
     currentMode = OFF;
     analogWrite(TOP_FAN_PIN, 0);
@@ -176,9 +178,15 @@ void printStatus() {
 
 void handleSerial() {
   if (!Serial.available()) return;
+
   String cmd = Serial.readStringUntil('\n');
   cmd.trim();
   if (cmd.length() == 0) return;
+
+  // Added Single Character Overrides from Peltier testing sketch
+  if (cmd == "H" || cmd == "h") { setPeltierMode(HEATING); return; }
+  if (cmd == "C" || cmd == "c") { setPeltierMode(COOLING); return; }
+  if (cmd == "O" || cmd == "o") { setPeltierMode(OFF); return; }
 
   if (cmd == "help") {
     Serial.println("Commands:");
@@ -191,6 +199,7 @@ void handleSerial() {
     Serial.println("  lux         -> print current lux");
     Serial.println("  show        -> show settings");
     Serial.println("  CLEAN       -> trigger SHT4x heater cycle");
+    Serial.println("  H/C/O       -> Manual Peltier override (Heat, Cool, Off)");
     return;
   }
 
@@ -284,6 +293,7 @@ void handleSerial() {
 
 void startCleaningCycle() {
   if (!sht4_found) return;
+
   Serial.println("!!! SHT4x CLEANING START (1s Blast) !!!");
   sht4.setHeater(SHT4X_HIGH_HEATER_1S);
   
@@ -320,7 +330,7 @@ void processESP32Command(String cmd) {
 void sendSensorData(float lux) {
   float t = 0.0;
   float h = 0.0;
-  
+
   if (sht4_found) {
     sensors_event_t humidity, temp;
     sht4.getEvent(&humidity, &temp);
@@ -333,6 +343,7 @@ void sendSensorData(float lux) {
     ",H:" + String(h,0) +
     ",L:" + String(lux,1) + 
     ",P:" + String(phValue,2);
+
   COMM_SERIAL.println(dataPacket);
   Serial.println("UART Packet: " + dataPacket);
 }
@@ -386,7 +397,7 @@ void setup() {
   Serial.println("pH Sensor Initialized.");
   Serial.println("System Online.");
   Serial.println("AUTO mode uses sensor thresholds.");
-  Serial.println("Type 'help' for commands.");
+  Serial.println("Type 'help' for commands or H/C/O to control Peltier.");
 }
 
 // ====================================================================
@@ -416,10 +427,12 @@ void loop() {
   // 3. PH SENSOR LOGIC
   if (currentMillis - lastPhUpdate >= phInterval) {
     lastPhUpdate = currentMillis;
+
     total = total - readings[readIndex];
     readings[readIndex] = analogRead(phPin);
     total = total + readings[readIndex];
     readIndex = (readIndex + 1) % numReadings;
+
     average = total / numReadings;
     
     float voltage = average * (5.0 / 1023.0);
