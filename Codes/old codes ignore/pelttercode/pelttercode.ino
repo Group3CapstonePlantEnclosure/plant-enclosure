@@ -62,7 +62,7 @@ Serial.println(">>> Mode set to: HEATING");
 
       // --- Add Fan Control for Heating ---
       analogWrite(TOP_FAN_PIN, 255);    // Large top fan FULL BLAST
-      analogWrite(BOTTOM_FAN_PIN, 64);   // Small bottom fan SLOW
+      analogWrite(BOTTOM_FAN_PIN, 255);   // Small bottom fan SLOW
       
     } else if (command == 'C' || command == 'c') {
       if (currentMode == HEATING) {
@@ -79,7 +79,7 @@ Serial.println(">>> Mode set to: COOLING");
 
       // --- Add Fan Control for Cooling (Identical to Heating) ---
       analogWrite(TOP_FAN_PIN, 255);    // Large top fan FULL BLAST
-      analogWrite(BOTTOM_FAN_PIN, 64);   // Small bottom fan SLOW
+      analogWrite(BOTTOM_FAN_PIN, 255);   // Small bottom fan SLOW
       
     } else if (command == 'O' || command == 'o') {
       currentMode = OFF;
