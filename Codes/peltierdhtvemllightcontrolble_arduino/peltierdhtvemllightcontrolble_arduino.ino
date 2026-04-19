@@ -16,7 +16,9 @@ const uint8_t R_EN = 8;
 const uint8_t L_EN = 7; // Pin 7 to avoid conflict with LIGHT_PWM_PIN
 const uint8_t RPWM = 10;
 const uint8_t LPWM = 11;
-
+// --- Humidifier Pins ---
+const int mistPin = 4; // Changed from 8 to 4 to prevent conflict with R_EN
+bool mistIsOn = false;
 const uint8_t TOP_FAN_PIN = 5;    // Replaced old PELTIER_IN2
 const uint8_t BOTTOM_FAN_PIN = 6; 
 
@@ -188,6 +190,15 @@ void handleSerial() {
   if (cmd == "C" || cmd == "c") { setPeltierMode(COOLING); return; }
   if (cmd == "O" || cmd == "o") { setPeltierMode(OFF); return; }
 
+  // Added Humidifier Command
+  if (cmd.equalsIgnoreCase("mist")) {
+    mistIsOn = !mistIsOn; // Flip the state
+    digitalWrite(mistPin, mistIsOn ? HIGH : LOW);
+    Serial.print("Mister Status: ");
+    Serial.println(mistIsOn ? "ON" : "OFF");
+    return;
+  }
+
   if (cmd == "help") {
     Serial.println("Commands:");
     Serial.println("  low <lux>   -> AUTO: turn ON below this");
@@ -200,6 +211,7 @@ void handleSerial() {
     Serial.println("  show        -> show settings");
     Serial.println("  CLEAN       -> trigger SHT4x heater cycle");
     Serial.println("  H/C/O       -> Manual Peltier override (Heat, Cool, Off)");
+    Serial.println("  mist        -> Toggle Humidifier ON/OFF");
     return;
   }
 
@@ -368,6 +380,10 @@ void setup() {
   // Initialize Light
   pinMode(LIGHT_PWM_PIN, OUTPUT);
   applyPwm(0);
+
+  // Initialize Humidifier (Mister)
+  pinMode(mistPin, OUTPUT);
+  digitalWrite(mistPin, LOW); // Start with the mister OFF
 
   // Initialize pH array
   for (int i = 0; i < numReadings; i++) {
