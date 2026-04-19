@@ -10,7 +10,6 @@
 
 // ------------------- HARDWARE PINS -------------------
 #define LIGHT_PWM_PIN 9
-const int phPin = A0;
 // --- Peltier & Fan Pins ---
 const uint8_t R_EN = 8;
 const uint8_t L_EN = 7; // Pin 7 to avoid conflict with LIGHT_PWM_PIN
@@ -350,11 +349,11 @@ void sendSensorData(float lux) {
     h = humidity.relative_humidity;
   }
 
+  // Pack the string without the pH data
   String dataPacket =
     "T:" + String(t,1) +
     ",H:" + String(h,0) +
-    ",L:" + String(lux,1) + 
-    ",P:" + String(phValue,2);
+    ",L:" + String(lux,1); 
 
   COMM_SERIAL.println(dataPacket);
   Serial.println("UART Packet: " + dataPacket);
@@ -385,11 +384,6 @@ void setup() {
   pinMode(mistPin, OUTPUT);
   digitalWrite(mistPin, LOW); // Start with the mister OFF
 
-  // Initialize pH array
-  for (int i = 0; i < numReadings; i++) {
-    readings[i] = 0;
-  }
-
   // Initialize Sensors
   Wire1.begin();
   if (sht4.begin(&Wire1)) {
@@ -410,7 +404,6 @@ void setup() {
     Serial.println("ERROR: VEML7700 NOT found. Check wiring.");
   }
 
-  Serial.println("pH Sensor Initialized.");
   Serial.println("System Online.");
   Serial.println("AUTO mode uses sensor thresholds.");
   Serial.println("Type 'help' for commands or H/C/O to control Peltier.");
@@ -440,41 +433,18 @@ void loop() {
     }
   }
 
-  // 3. PH SENSOR LOGIC
-  if (currentMillis - lastPhUpdate >= phInterval) {
-    lastPhUpdate = currentMillis;
-
-    total = total - readings[readIndex];
-    readings[readIndex] = analogRead(phPin);
-    total = total + readings[readIndex];
-    readIndex = (readIndex + 1) % numReadings;
-
-    average = total / numReadings;
-    
-    float voltage = average * (5.0 / 1023.0);
-    phValue = 3.5 * voltage + calibrationOffset;
-
-    // Print to Serial every 500ms
-    Serial.print("Analog: ");
-    Serial.print(average);
-    Serial.print(" | Voltage: ");
-    Serial.print(voltage, 3);
-    Serial.print(" V | pH: ");
-    Serial.println(phValue, 2);
-  }
-
-  // 4. Automatic Hourly Cleaning
+  // 3. Automatic Hourly Cleaning
   if (currentMillis - lastHeaterCycle >= heaterInterval && !heaterActive) {
     startCleaningCycle();
   }
 
-  // 5. Heater Cooldown
+  // 4. Heater Cooldown
   if (heaterActive && (currentMillis - heaterStartTime > 10000)) {
     Serial.println("Cooldown finished. Resuming accurate data.");
     heaterActive = false;
   }
 
-  // 6. General Logic (Skipped if heating/cooling down)
+  // 5. General Logic (Skipped if heating/cooling down)
   if (!heaterActive) {
     
     // Listen for ESP32 Commands
