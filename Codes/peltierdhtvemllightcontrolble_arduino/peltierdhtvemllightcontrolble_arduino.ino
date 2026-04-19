@@ -9,10 +9,10 @@
 #define COMM_SERIAL Serial2 
 
 // ------------------- HARDWARE PINS -------------------
-#define LIGHT_PWM_PIN 9
+#define LIGHT_PWM_PIN 7
 // --- Peltier & Fan Pins ---
 const uint8_t R_EN = 8;
-const uint8_t L_EN = 7; // Pin 7 to avoid conflict with LIGHT_PWM_PIN
+const uint8_t L_EN = 9; // Pin 7 to avoid conflict with LIGHT_PWM_PIN
 const uint8_t RPWM = 10;
 const uint8_t LPWM = 11;
 // --- Humidifier Pins ---
