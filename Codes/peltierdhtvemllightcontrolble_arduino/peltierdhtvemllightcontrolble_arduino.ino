@@ -97,7 +97,7 @@ void setPeltierMode(Mode newMode) {
     currentMode = HEATING;
     slowPwmTimer = 0; 
     analogWrite(TOP_FAN_PIN, 255);    // Large top fan FULL BLAST
-    analogWrite(BOTTOM_FAN_PIN, 64);  // Small bottom fan SLOW
+    analogWrite(BOTTOM_FAN_PIN, 255);  // Small bottom fan SLOW
     Serial.println(">>> Peltier Mode: HEATING");
 
   } else if (newMode == COOLING) {
@@ -107,7 +107,7 @@ void setPeltierMode(Mode newMode) {
     currentMode = COOLING;
     slowPwmTimer = 0; 
     analogWrite(TOP_FAN_PIN, 255);    // Large top fan FULL BLAST
-    analogWrite(BOTTOM_FAN_PIN, 64);  // Small bottom fan SLOW
+    analogWrite(BOTTOM_FAN_PIN, 255);  // Small bottom fan SLOW
     Serial.println(">>> Peltier Mode: COOLING");
 
   } else if (newMode == OFF) {
