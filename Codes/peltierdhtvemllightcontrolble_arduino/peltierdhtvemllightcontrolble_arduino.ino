@@ -75,6 +75,11 @@ bool fanOverrideActive = false;
 unsigned long mistOverrideTimer = 0;
 bool mistOverrideActive = false;
 
+// ------------------- TEMP CONTROL VARIABLES ----------
+float targetTemp = 75.0;         // Set your desired baseline temperature here (Fahrenheit)
+float currentTemp = 0.0;         // Global tracker for the latest temperature reading
+bool autoPeltierMode = true;     // Flag to allow manual override without auto-reverting
+
 // ====================================================================
 // ==================== PELTIER & FAN FUNCTIONS =======================
 // ====================================================================
@@ -165,8 +170,10 @@ void turnOff() {
 }
 
 void printStatus() {
-  Serial.print("Mode: ");
+  Serial.print("Light Mode: ");
   Serial.println(autoMode ? "AUTO" : "MANUAL");
+  Serial.print("Peltier Mode: ");
+  Serial.println(autoPeltierMode ? "AUTO" : "MANUAL");
   Serial.print("Low threshold: ");
   Serial.println(lowLuxThreshold);
   Serial.print("High threshold: ");
@@ -191,18 +198,22 @@ void handleSerial() {
   String cmd = Serial.readStringUntil('\n');
   cmd.trim();
   if (cmd.length() == 0) return;
-  // Added Single Character Overrides from Peltier testing sketch
-  if (cmd == "H" || cmd == "h") { setPeltierMode(HEATING);
-  return; }
-  if (cmd == "C" || cmd == "c") { setPeltierMode(COOLING); return;
-  }
-  if (cmd == "O" || cmd == "o") { setPeltierMode(OFF); return;
+  
+  // Single Character Overrides from Peltier testing sketch (Disables auto temp)
+  if (cmd == "H" || cmd == "h") { autoPeltierMode = false; setPeltierMode(HEATING); return; }
+  if (cmd == "C" || cmd == "c") { autoPeltierMode = false; setPeltierMode(COOLING); return; }
+  if (cmd == "O" || cmd == "o") { autoPeltierMode = false; setPeltierMode(OFF); return; }
+
+  // Re-enable Auto Peltier Mode
+  if (cmd.equalsIgnoreCase("peltier auto")) {
+    autoPeltierMode = true;
+    Serial.println("Peltier Auto Temp Control ENABLED");
+    return;
   }
 
-  // Added Humidifier Command
+  // Humidifier Command
   if (cmd.equalsIgnoreCase("mist")) {
     mistIsOn = !mistIsOn;
-    // Flip the state
     digitalWrite(mistPin, mistIsOn ? HIGH : LOW);
     Serial.print("Mister Status: ");
     Serial.println(mistIsOn ? "ON" : "OFF");
@@ -211,17 +222,18 @@ void handleSerial() {
 
   if (cmd == "help") {
     Serial.println("Commands:");
-    Serial.println("  low <lux>   -> AUTO: turn ON below this");
-    Serial.println("  high <lux>  -> AUTO: turn OFF above this");
-    Serial.println("  lvl <1|2|3> -> set brightness level");
-    Serial.println("  auto        -> sensor controls light");
-    Serial.println("  on          -> manual ON");
-    Serial.println("  off         -> manual OFF");
-    Serial.println("  lux         -> print current lux");
-    Serial.println("  show        -> show settings");
-    Serial.println("  CLEAN       -> trigger SHT4x heater cycle");
-    Serial.println("  H/C/O       -> Manual Peltier override (Heat, Cool, Off)");
-    Serial.println("  mist        -> Toggle Humidifier ON/OFF");
+    Serial.println("  low <lux>    -> AUTO: turn ON below this");
+    Serial.println("  high <lux>   -> AUTO: turn OFF above this");
+    Serial.println("  lvl <1|2|3>  -> set brightness level");
+    Serial.println("  auto         -> sensor controls light");
+    Serial.println("  on           -> manual ON");
+    Serial.println("  off          -> manual OFF");
+    Serial.println("  lux          -> print current lux");
+    Serial.println("  show         -> show settings");
+    Serial.println("  CLEAN        -> trigger SHT4x heater cycle");
+    Serial.println("  H/C/O        -> Manual Peltier override (Disables Auto Temp)");
+    Serial.println("  peltier auto -> Re-enable Auto Temp Control");
+    Serial.println("  mist         -> Toggle Humidifier ON/OFF");
     return;
   }
 
@@ -244,21 +256,21 @@ void handleSerial() {
 
   if (cmd == "auto") {
     autoMode = true;
-    Serial.println("Mode set to AUTO");
+    Serial.println("Light Mode set to AUTO");
     return;
   }
 
   if (cmd == "on") {
     autoMode = false;
     turnOn();
-    Serial.println("Manual mode enabled");
+    Serial.println("Manual light mode enabled");
     return;
   }
 
   if (cmd == "off") {
     autoMode = false;
     turnOff();
-    Serial.println("Manual mode enabled");
+    Serial.println("Manual light mode enabled");
     return;
   }
 
@@ -331,12 +343,15 @@ void startCleaningCycle() {
 
 void processESP32Command(String cmd) {
   if (cmd == "CMD:COOL") {
+    autoPeltierMode = false;
     setPeltierMode(COOLING);
   } 
   else if (cmd == "CMD:HEAT") {
+    autoPeltierMode = false;
     setPeltierMode(HEATING);
   } 
   else if (cmd == "CMD:PELTIER_OFF") {
+    autoPeltierMode = false;
     setPeltierMode(OFF);
   } 
   else if (cmd.startsWith("CMD:LIGHT,")) {
@@ -348,18 +363,16 @@ void processESP32Command(String cmd) {
 }
 
 void sendSensorData(float lux) {
-  float t = 0.0;
-  
   if (sht4_found) {
     sensors_event_t humidity, temp;
     sht4.getEvent(&humidity, &temp);
-    t = ((temp.temperature * 1.8) + 32.0) + tempOffset;
+    currentTemp = ((temp.temperature * 1.8) + 32.0) + tempOffset; // Save to global variable
     currentHumidity = humidity.relative_humidity; // Save to global variable
   }
 
   // Pack the string without the pH data
   String dataPacket =
-    "T:" + String(t,1) +
+    "T:" + String(currentTemp,1) +
     ",H:" + String(currentHumidity,0) +
     ",L:" + String(lux,1);
   COMM_SERIAL.println(dataPacket);
@@ -475,13 +488,36 @@ void loop() {
       }
     }
 
-    // Sensor update to ESP32 every 10 seconds (Also evaluates Humidity)
+    // Sensor update to ESP32 every 10 seconds (Also evaluates Temp & Humidity)
     if (currentMillis - lastUpdate >= updateInterval) {
       lastUpdate = currentMillis;
-      sendSensorData(lux); // This updates the global 'currentHumidity'
+      sendSensorData(lux); // Updates the global 'currentTemp' and 'currentHumidity'
 
-      // --- Humidity Threshold Checks ---
       if (sht4_found) {
+        
+        // --- Peltier Auto Temperature Control ---
+        if (autoPeltierMode) {
+          if (currentMode != HEATING && currentTemp <= (targetTemp - 10.0)) {
+            Serial.println("Temp LOW (-10F): Auto HEATING activated");
+            setPeltierMode(HEATING);
+          }
+          else if (currentMode != COOLING && currentTemp >= (targetTemp + 10.0)) {
+            Serial.println("Temp HIGH (+10F): Auto COOLING activated");
+            setPeltierMode(COOLING);
+          }
+          // Turn off Heating once it reaches +5F of the threshold
+          else if (currentMode == HEATING && currentTemp >= (targetTemp + 5.0)) {
+            Serial.println("Temp Target Reached (+5F): Auto HEATING stopped");
+            setPeltierMode(OFF);
+          }
+          // Turn off Cooling once it reaches -5F of the threshold
+          else if (currentMode == COOLING && currentTemp <= (targetTemp - 5.0)) {
+            Serial.println("Temp Target Reached (-5F): Auto COOLING stopped");
+            setPeltierMode(OFF);
+          }
+        }
+
+        // --- Humidity Threshold Checks ---
         if (currentHumidity >= (targetHumidity + 10.0)) {
           // Top Fan On for 5s
           fanOverrideActive = true;
