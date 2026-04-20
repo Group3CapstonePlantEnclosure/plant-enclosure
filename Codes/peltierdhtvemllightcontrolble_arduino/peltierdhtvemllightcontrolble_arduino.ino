@@ -9,16 +9,18 @@
 #define COMM_SERIAL Serial2 
 
 // ------------------- HARDWARE PINS -------------------
-#define LIGHT_PWM_PIN 7
+#define LIGHT_PWM_PIN 9
 // --- Peltier & Fan Pins ---
 const uint8_t R_EN = 8;
-const uint8_t L_EN = 9; // Pin 7 to avoid conflict with LIGHT_PWM_PIN
+const uint8_t L_EN = 7; // Pin 7 to avoid conflict with LIGHT_PWM_PIN
 const uint8_t RPWM = 10;
 const uint8_t LPWM = 11;
 // --- Humidifier Pins ---
-const int mistPin = 4; // Changed from 8 to 4 to prevent conflict with R_EN
+const int mistPin = 4;
+// Changed from 8 to 4 to prevent conflict with R_EN
 bool mistIsOn = false;
-const uint8_t TOP_FAN_PIN = 5;    // Replaced old PELTIER_IN2
+const uint8_t TOP_FAN_PIN = 5;
+// Replaced old PELTIER_IN2
 const uint8_t BOTTOM_FAN_PIN = 6; 
 
 // ------------------- OBJECTS -------------------------
@@ -28,10 +30,10 @@ BTS7960 motorController(L_EN, R_EN, LPWM, RPWM);
 
 // ------------------- PELTIER VARIABLES ---------------
 elapsedMillis slowPwmTimer;
-const unsigned long PWM_PERIOD = 2000; // 2-second cycle
+const unsigned long PWM_PERIOD = 2000;
+// 2-second cycle
 const float DUTY_CYCLE = 0.83; // 83% duty cycle to limit to ~5A
 const unsigned long ON_TIME = PWM_PERIOD * DUTY_CYCLE;
-
 enum Mode { COOLING, HEATING, OFF };
 Mode currentMode = OFF;
 
@@ -39,7 +41,6 @@ Mode currentMode = OFF;
 float lowLuxThreshold  = 150.0;  
 float highLuxThreshold = 250.0;
 int level = 3;
-
 bool autoMode = true;
 bool ledOn = false;
 
@@ -50,7 +51,6 @@ int readings[numReadings];
 int readIndex = 0;              
 long total = 0;
 int average = 0;
-
 float phValue = 0.0;
 unsigned long lastPhUpdate = 0;
 const long phInterval = 500;
@@ -66,6 +66,14 @@ bool sht4_found = false;
 bool veml_found = false;
 unsigned long lastUpdate = 0;
 const long updateInterval = 10000;
+
+// ------------------- HUMIDITY CONTROL VARIABLES ------
+float targetHumidity = 60.0;     // Set your desired baseline humidity here
+float currentHumidity = 0.0;     // Global tracker for the latest humidity reading
+unsigned long fanOverrideTimer = 0;
+bool fanOverrideActive = false;
+unsigned long mistOverrideTimer = 0;
+bool mistOverrideActive = false;
 
 // ====================================================================
 // ==================== PELTIER & FAN FUNCTIONS =======================
@@ -90,30 +98,31 @@ void applyStartupDelay() {
 
 void setPeltierMode(Mode newMode) {
   if (currentMode == newMode) return;
-
   if (newMode == HEATING) {
     if (currentMode == COOLING) applySafetyPause();
     else if (currentMode == OFF) applyStartupDelay();
-
     currentMode = HEATING;
     slowPwmTimer = 0; 
     analogWrite(TOP_FAN_PIN, 255);    // Large top fan FULL BLAST
-    analogWrite(BOTTOM_FAN_PIN, 255);  // Small bottom fan SLOW
+    analogWrite(BOTTOM_FAN_PIN, 255);
+    // Small bottom fan SLOW
     Serial.println(">>> Peltier Mode: HEATING");
-
   } else if (newMode == COOLING) {
     if (currentMode == HEATING) applySafetyPause();
     else if (currentMode == OFF) applyStartupDelay();
     
     currentMode = COOLING;
     slowPwmTimer = 0; 
-    analogWrite(TOP_FAN_PIN, 255);    // Large top fan FULL BLAST
-    analogWrite(BOTTOM_FAN_PIN, 255);  // Small bottom fan SLOW
+    analogWrite(TOP_FAN_PIN, 255);
+    // Large top fan FULL BLAST
+    analogWrite(BOTTOM_FAN_PIN, 255);
+    // Small bottom fan SLOW
     Serial.println(">>> Peltier Mode: COOLING");
-
   } else if (newMode == OFF) {
     currentMode = OFF;
-    analogWrite(TOP_FAN_PIN, 0);
+    if (!fanOverrideActive) {         // Only turn off if humidity override isn't using it
+      analogWrite(TOP_FAN_PIN, 0);
+    }
     analogWrite(BOTTOM_FAN_PIN, 0);
     motorController.Stop();
     Serial.println(">>> Peltier Mode: OFF");
@@ -179,19 +188,21 @@ void printStatus() {
 
 void handleSerial() {
   if (!Serial.available()) return;
-
   String cmd = Serial.readStringUntil('\n');
   cmd.trim();
   if (cmd.length() == 0) return;
-
   // Added Single Character Overrides from Peltier testing sketch
-  if (cmd == "H" || cmd == "h") { setPeltierMode(HEATING); return; }
-  if (cmd == "C" || cmd == "c") { setPeltierMode(COOLING); return; }
-  if (cmd == "O" || cmd == "o") { setPeltierMode(OFF); return; }
+  if (cmd == "H" || cmd == "h") { setPeltierMode(HEATING);
+  return; }
+  if (cmd == "C" || cmd == "c") { setPeltierMode(COOLING); return;
+  }
+  if (cmd == "O" || cmd == "o") { setPeltierMode(OFF); return;
+  }
 
   // Added Humidifier Command
   if (cmd.equalsIgnoreCase("mist")) {
-    mistIsOn = !mistIsOn; // Flip the state
+    mistIsOn = !mistIsOn;
+    // Flip the state
     digitalWrite(mistPin, mistIsOn ? HIGH : LOW);
     Serial.print("Mister Status: ");
     Serial.println(mistIsOn ? "ON" : "OFF");
@@ -256,7 +267,6 @@ void handleSerial() {
   String val = (sp == -1) ? "" : cmd.substring(sp + 1);
   key.trim();
   val.trim();
-
   if (key == "low") {
     float v = val.toFloat();
     if (v >= 0) {
@@ -304,7 +314,6 @@ void handleSerial() {
 
 void startCleaningCycle() {
   if (!sht4_found) return;
-
   Serial.println("!!! SHT4x CLEANING START (1s Blast) !!!");
   sht4.setHeater(SHT4X_HIGH_HEATER_1S);
   
@@ -340,21 +349,19 @@ void processESP32Command(String cmd) {
 
 void sendSensorData(float lux) {
   float t = 0.0;
-  float h = 0.0;
-
+  
   if (sht4_found) {
     sensors_event_t humidity, temp;
     sht4.getEvent(&humidity, &temp);
     t = ((temp.temperature * 1.8) + 32.0) + tempOffset;
-    h = humidity.relative_humidity;
+    currentHumidity = humidity.relative_humidity; // Save to global variable
   }
 
   // Pack the string without the pH data
   String dataPacket =
     "T:" + String(t,1) +
-    ",H:" + String(h,0) +
-    ",L:" + String(lux,1); 
-
+    ",H:" + String(currentHumidity,0) +
+    ",L:" + String(lux,1);
   COMM_SERIAL.println(dataPacket);
   Serial.println("UART Packet: " + dataPacket);
 }
@@ -367,7 +374,6 @@ void setup() {
   Serial.begin(115200); 
   COMM_SERIAL.begin(115200);
   while (!Serial) delay(10);
-
   // Initialize Peltier & Fans
   motorController.Enable();
   motorController.Stop();
@@ -375,14 +381,14 @@ void setup() {
   pinMode(BOTTOM_FAN_PIN, OUTPUT);
   analogWrite(TOP_FAN_PIN, 0);
   analogWrite(BOTTOM_FAN_PIN, 0);
-
   // Initialize Light
   pinMode(LIGHT_PWM_PIN, OUTPUT);
   applyPwm(0);
 
   // Initialize Humidifier (Mister)
   pinMode(mistPin, OUTPUT);
-  digitalWrite(mistPin, LOW); // Start with the mister OFF
+  digitalWrite(mistPin, LOW);
+  // Start with the mister OFF
 
   // Initialize Sensors
   Wire1.begin();
@@ -415,7 +421,6 @@ void setup() {
 
 void loop() {
   unsigned long currentMillis = millis();
-
   // 1. Handle PC serial commands
   handleSerial();
 
@@ -470,10 +475,46 @@ void loop() {
       }
     }
 
-    // Sensor update to ESP32 every 10 seconds
+    // Sensor update to ESP32 every 10 seconds (Also evaluates Humidity)
     if (currentMillis - lastUpdate >= updateInterval) {
       lastUpdate = currentMillis;
-      sendSensorData(lux);
+      sendSensorData(lux); // This updates the global 'currentHumidity'
+
+      // --- Humidity Threshold Checks ---
+      if (sht4_found) {
+        if (currentHumidity >= (targetHumidity + 10.0)) {
+          // Top Fan On for 5s
+          fanOverrideActive = true;
+          fanOverrideTimer = currentMillis;
+          analogWrite(TOP_FAN_PIN, 255);
+          Serial.println("Humidity HIGH: Top Fan ON for 5s");
+        } 
+        else if (currentHumidity <= (targetHumidity - 10.0)) {
+          // Misters On for 5s
+          mistOverrideActive = true;
+          mistOverrideTimer = currentMillis;
+          digitalWrite(mistPin, HIGH);
+          mistIsOn = true;
+          Serial.println("Humidity LOW: Misters ON for 5s");
+        }
+      }
     }
+  }
+
+  // 6. Handle 5-Second Override Timeouts (Non-Blocking)
+  if (fanOverrideActive && (currentMillis - fanOverrideTimer >= 5000)) {
+    fanOverrideActive = false;
+    Serial.println("Humidity Top Fan Override Complete.");
+    // Only turn off the fan if the Peltier isn't actively using it
+    if (currentMode == OFF) {
+      analogWrite(TOP_FAN_PIN, 0);
+    }
+  }
+
+  if (mistOverrideActive && (currentMillis - mistOverrideTimer >= 5000)) {
+    mistOverrideActive = false;
+    digitalWrite(mistPin, LOW);
+    mistIsOn = false;
+    Serial.println("Humidity Mister Override Complete.");
   }
 }
