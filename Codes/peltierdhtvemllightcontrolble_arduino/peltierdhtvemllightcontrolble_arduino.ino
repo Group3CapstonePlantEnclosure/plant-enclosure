@@ -74,6 +74,8 @@ unsigned long fanOverrideTimer = 0;
 bool fanOverrideActive = false;
 unsigned long mistOverrideTimer = 0;
 bool mistOverrideActive = false;
+bool autoHumidityMode = true;    // Flag to allow manual override without auto-reverting
+bool manualTopFanOn = false;     // Tracks if the user manually commanded the fan ON
 
 // ------------------- TEMP CONTROL VARIABLES ----------
 float targetTemp = 75.0;         // Set your desired baseline temperature here (Fahrenheit)
@@ -125,7 +127,7 @@ void setPeltierMode(Mode newMode) {
     Serial.println(">>> Peltier Mode: COOLING");
   } else if (newMode == OFF) {
     currentMode = OFF;
-    if (!fanOverrideActive) {         // Only turn off if humidity override isn't using it
+    if (!fanOverrideActive && !manualTopFanOn) { // Check both auto-override and manual state
       analogWrite(TOP_FAN_PIN, 0);
     }
     analogWrite(BOTTOM_FAN_PIN, 0);
@@ -174,6 +176,8 @@ void printStatus() {
   Serial.println(autoMode ? "AUTO" : "MANUAL");
   Serial.print("Peltier Mode: ");
   Serial.println(autoPeltierMode ? "AUTO" : "MANUAL");
+  Serial.print("Humidity Mode: ");
+  Serial.println(autoHumidityMode ? "AUTO" : "MANUAL");
   Serial.print("Low threshold: ");
   Serial.println(lowLuxThreshold);
   Serial.print("High threshold: ");
@@ -211,12 +215,36 @@ void handleSerial() {
     return;
   }
 
-  // Humidifier Command
+  // Humidifier Command (Disables auto humidity)
   if (cmd.equalsIgnoreCase("mist")) {
+    autoHumidityMode = false;
     mistIsOn = !mistIsOn;
     digitalWrite(mistPin, mistIsOn ? HIGH : LOW);
     Serial.print("Mister Status: ");
-    Serial.println(mistIsOn ? "ON" : "OFF");
+    Serial.println(mistIsOn ? "ON (Auto Humidity Disabled)" : "OFF (Auto Humidity Disabled)");
+    return;
+  }
+
+  // Top Fan Command (Disables auto humidity)
+  if (cmd.equalsIgnoreCase("fan")) {
+    autoHumidityMode = false;
+    manualTopFanOn = !manualTopFanOn;
+    
+    if (manualTopFanOn) {
+      analogWrite(TOP_FAN_PIN, 255);
+    } else if (currentMode == OFF && !fanOverrideActive) {
+      analogWrite(TOP_FAN_PIN, 0); // Only turn off if Peltier and auto-override aren't using it
+    }
+    
+    Serial.print("Top Fan Status: ");
+    Serial.println(manualTopFanOn ? "ON (Auto Humidity Disabled)" : "OFF (Auto Humidity Disabled)");
+    return;
+  }
+
+  // Re-enable Auto Humidity Mode
+  if (cmd.equalsIgnoreCase("humid auto")) {
+    autoHumidityMode = true;
+    Serial.println("Humidity Auto Control ENABLED");
     return;
   }
 
@@ -233,7 +261,9 @@ void handleSerial() {
     Serial.println("  CLEAN        -> trigger SHT4x heater cycle");
     Serial.println("  H/C/O        -> Manual Peltier override (Disables Auto Temp)");
     Serial.println("  peltier auto -> Re-enable Auto Temp Control");
-    Serial.println("  mist         -> Toggle Humidifier ON/OFF");
+    Serial.println("  mist         -> Toggle Humidifier ON/OFF (Disables Auto Humidity)");
+    Serial.println("  fan          -> Toggle Top Fan ON/OFF (Disables Auto Humidity)");
+    Serial.println("  humid auto   -> Re-enable Auto Humidity Control");
     return;
   }
 
@@ -518,20 +548,22 @@ void loop() {
         }
 
         // --- Humidity Threshold Checks ---
-        if (currentHumidity >= (targetHumidity + 10.0)) {
-          // Top Fan On for 5s
-          fanOverrideActive = true;
-          fanOverrideTimer = currentMillis;
-          analogWrite(TOP_FAN_PIN, 255);
-          Serial.println("Humidity HIGH: Top Fan ON for 5s");
-        } 
-        else if (currentHumidity <= (targetHumidity - 10.0)) {
-          // Misters On for 5s
-          mistOverrideActive = true;
-          mistOverrideTimer = currentMillis;
-          digitalWrite(mistPin, HIGH);
-          mistIsOn = true;
-          Serial.println("Humidity LOW: Misters ON for 5s");
+        if (autoHumidityMode) {
+          if (currentHumidity >= (targetHumidity + 10.0)) {
+            // Top Fan On for 5s
+            fanOverrideActive = true;
+            fanOverrideTimer = currentMillis;
+            analogWrite(TOP_FAN_PIN, 255);
+            Serial.println("Humidity HIGH: Top Fan ON for 5s");
+          } 
+          else if (currentHumidity <= (targetHumidity - 10.0)) {
+            // Misters On for 5s
+            mistOverrideActive = true;
+            mistOverrideTimer = currentMillis;
+            digitalWrite(mistPin, HIGH);
+            mistIsOn = true;
+            Serial.println("Humidity LOW: Misters ON for 5s");
+          }
         }
       }
     }
@@ -541,8 +573,8 @@ void loop() {
   if (fanOverrideActive && (currentMillis - fanOverrideTimer >= 5000)) {
     fanOverrideActive = false;
     Serial.println("Humidity Top Fan Override Complete.");
-    // Only turn off the fan if the Peltier isn't actively using it
-    if (currentMode == OFF) {
+    // Only turn off the fan if the Peltier isn't actively using it AND the manual override isn't active
+    if (currentMode == OFF && !manualTopFanOn) {
       analogWrite(TOP_FAN_PIN, 0);
     }
   }
