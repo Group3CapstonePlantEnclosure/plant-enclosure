@@ -194,28 +194,35 @@ void printStatus() {
 }
 
 // ====================================================================
-// ==================== SERIAL COMMAND HANDLER ========================
+// ==================== SHARED COMMAND HANDLER ========================
 // ====================================================================
 
-void handleSerial() {
-  if (!Serial.available()) return;
-  String cmd = Serial.readStringUntil('\n');
-  cmd.trim();
+void processCommand(String cmd) {
   if (cmd.length() == 0) return;
-  
-  // Single Character Overrides from Peltier testing sketch (Disables auto temp)
+
+  // --- ESP32 Specific Formats ---
+  if (cmd == "CMD:COOL") { autoPeltierMode = false; setPeltierMode(COOLING); return; } 
+  if (cmd == "CMD:HEAT") { autoPeltierMode = false; setPeltierMode(HEATING); return; } 
+  if (cmd == "CMD:PELTIER_OFF") { autoPeltierMode = false; setPeltierMode(OFF); return; } 
+  if (cmd.startsWith("CMD:LIGHT,")) {
+    autoMode = false;
+    int pwmValue = cmd.substring(10).toInt();
+    applyPwm(pwmValue);
+    ledOn = (pwmValue > 0);
+    return;
+  }
+
+  // --- General Overrides ---
   if (cmd == "H" || cmd == "h") { autoPeltierMode = false; setPeltierMode(HEATING); return; }
   if (cmd == "C" || cmd == "c") { autoPeltierMode = false; setPeltierMode(COOLING); return; }
   if (cmd == "O" || cmd == "o") { autoPeltierMode = false; setPeltierMode(OFF); return; }
 
-  // Re-enable Auto Peltier Mode
   if (cmd.equalsIgnoreCase("peltier auto")) {
     autoPeltierMode = true;
     Serial.println("Peltier Auto Temp Control ENABLED");
     return;
   }
 
-  // Humidifier Command (Disables auto humidity)
   if (cmd.equalsIgnoreCase("mist")) {
     autoHumidityMode = false;
     mistIsOn = !mistIsOn;
@@ -225,7 +232,6 @@ void handleSerial() {
     return;
   }
 
-  // Top Fan Command (Disables auto humidity)
   if (cmd.equalsIgnoreCase("fan")) {
     autoHumidityMode = false;
     manualTopFanOn = !manualTopFanOn;
@@ -233,7 +239,7 @@ void handleSerial() {
     if (manualTopFanOn) {
       analogWrite(TOP_FAN_PIN, 255);
     } else if (currentMode == OFF && !fanOverrideActive) {
-      analogWrite(TOP_FAN_PIN, 0); // Only turn off if Peltier and auto-override aren't using it
+      analogWrite(TOP_FAN_PIN, 0); 
     }
     
     Serial.print("Top Fan Status: ");
@@ -241,12 +247,24 @@ void handleSerial() {
     return;
   }
 
-  // Re-enable Auto Humidity Mode
   if (cmd.equalsIgnoreCase("humid auto")) {
     autoHumidityMode = true;
     Serial.println("Humidity Auto Control ENABLED");
     return;
   }
+
+  if (cmd == "show") { printStatus(); return; }
+  if (cmd == "CLEAN") { startCleaningCycle(); return; }
+  if (cmd == "lux") {
+    Serial.print("Lux: ");
+    if (veml_found) Serial.println(veml.readLux(), 1);
+    else Serial.println("N/A");
+    return;
+  }
+
+  if (cmd == "auto") { autoMode = true; Serial.println("Light Mode set to AUTO"); return; }
+  if (cmd == "on") { autoMode = false; turnOn(); Serial.println("Manual light mode enabled"); return; }
+  if (cmd == "off") { autoMode = false; turnOff(); Serial.println("Manual light mode enabled"); return; }
 
   if (cmd == "help") {
     Serial.println("Commands:");
@@ -267,83 +285,30 @@ void handleSerial() {
     return;
   }
 
-  if (cmd == "show") {
-    printStatus();
-    return;
-  }
-
-  if (cmd == "CLEAN") {
-    startCleaningCycle();
-    return;
-  }
-
-  if (cmd == "lux") {
-    Serial.print("Lux: ");
-    if (veml_found) Serial.println(veml.readLux(), 1);
-    else Serial.println("N/A");
-    return;
-  }
-
-  if (cmd == "auto") {
-    autoMode = true;
-    Serial.println("Light Mode set to AUTO");
-    return;
-  }
-
-  if (cmd == "on") {
-    autoMode = false;
-    turnOn();
-    Serial.println("Manual light mode enabled");
-    return;
-  }
-
-  if (cmd == "off") {
-    autoMode = false;
-    turnOff();
-    Serial.println("Manual light mode enabled");
-    return;
-  }
-
+  // --- Parameter Adjustments ---
   int sp = cmd.indexOf(' ');
   String key = (sp == -1) ? cmd : cmd.substring(0, sp);
   String val = (sp == -1) ? "" : cmd.substring(sp + 1);
   key.trim();
   val.trim();
+  
   if (key == "low") {
     float v = val.toFloat();
-    if (v >= 0) {
-      lowLuxThreshold = v;
-      Serial.print("Low threshold set to ");
-      Serial.println(lowLuxThreshold);
-    } else {
-      Serial.println("Usage: low <lux>");
-    }
+    if (v >= 0) { lowLuxThreshold = v; Serial.print("Low threshold set to "); Serial.println(lowLuxThreshold); } 
+    else { Serial.println("Usage: low <lux>"); }
   }
   else if (key == "high") {
     float v = val.toFloat();
-    if (v >= 0) {
-      highLuxThreshold = v;
-      Serial.print("High threshold set to ");
-      Serial.println(highLuxThreshold);
-    } else {
-      Serial.println("Usage: high <lux>");
-    }
+    if (v >= 0) { highLuxThreshold = v; Serial.print("High threshold set to "); Serial.println(highLuxThreshold); } 
+    else { Serial.println("Usage: high <lux>"); }
   }
   else if (key == "lvl") {
     int lv = val.toInt();
     if (lv >= 1 && lv <= 3) {
       level = lv;
-      Serial.print("Level set to ");
-      Serial.println(level);
-
-      if (ledOn) {
-        applyPwm(pwmForLevel(level));
-        Serial.print("Applied PWM ");
-        Serial.println(pwmForLevel(level));
-      }
-    } else {
-      Serial.println("Usage: lvl 1, 2, or 3");
-    }
+      Serial.print("Level set to "); Serial.println(level);
+      if (ledOn) { applyPwm(pwmForLevel(level)); Serial.print("Applied PWM "); Serial.println(pwmForLevel(level)); }
+    } else { Serial.println("Usage: lvl 1, 2, or 3"); }
   }
   else {
     Serial.println("Unknown command. Type: help");
@@ -351,7 +316,7 @@ void handleSerial() {
 }
 
 // ====================================================================
-// ==================== MAINTENANCE & ESP32 COMMS =====================
+// ==================== MAINTENANCE & SENSOR DATA =====================
 // ====================================================================
 
 void startCleaningCycle() {
@@ -369,27 +334,6 @@ void startCleaningCycle() {
 
   COMM_SERIAL.println("STATUS:CLEANING");
   Serial.println("Blast complete. Cooling down for 10 seconds...");
-}
-
-void processESP32Command(String cmd) {
-  if (cmd == "CMD:COOL") {
-    autoPeltierMode = false;
-    setPeltierMode(COOLING);
-  } 
-  else if (cmd == "CMD:HEAT") {
-    autoPeltierMode = false;
-    setPeltierMode(HEATING);
-  } 
-  else if (cmd == "CMD:PELTIER_OFF") {
-    autoPeltierMode = false;
-    setPeltierMode(OFF);
-  } 
-  else if (cmd.startsWith("CMD:LIGHT,")) {
-    autoMode = false;
-    int pwmValue = cmd.substring(10).toInt();
-    applyPwm(pwmValue);
-    ledOn = (pwmValue > 0);
-  }
 }
 
 void sendSensorData(float lux) {
@@ -464,8 +408,13 @@ void setup() {
 
 void loop() {
   unsigned long currentMillis = millis();
-  // 1. Handle PC serial commands
-  handleSerial();
+  
+  // 1. Handle PC serial commands (USB)
+  if (Serial.available()) {
+    String received = Serial.readStringUntil('\n');
+    received.trim();
+    processCommand(received);
+  }
 
   // 2. Slow PWM Logic for Peltier
   if (currentMode != OFF) {
@@ -495,11 +444,11 @@ void loop() {
   // 5. General Logic (Skipped if heating/cooling down)
   if (!heaterActive) {
     
-    // Listen for ESP32 Commands
+    // Listen for ESP32 Commands (TX/RX)
     if (COMM_SERIAL.available()) {
       String received = COMM_SERIAL.readStringUntil('\n');
       received.trim();
-      processESP32Command(received);
+      processCommand(received); // Now routes to the same master handler
     }
 
     // Auto Light Control Logic
