@@ -66,7 +66,20 @@ Preferences wifiPrefs;
 static lv_obj_t * network_settings_page = NULL;
 static lv_obj_t * network_connect_btn = NULL;
 static lv_obj_t * network_forget_btn = NULL;
-static lv_obj_t * dashboard_ph_value_label = NULL;
+static lv_obj_t * dashboard_hum_card = NULL;
+static lv_obj_t * dashboard_soil_card = NULL;
+static lv_obj_t * dashboard_hum_arc = NULL;
+static lv_obj_t * dashboard_soil_arc = NULL;
+static lv_obj_t * dashboard_hum_value_label = NULL;
+static lv_obj_t * dashboard_soil_value_label = NULL;
+static lv_obj_t * dashboard_temp_card = NULL;
+static lv_obj_t * dashboard_temp_bar = NULL;
+static lv_obj_t * dashboard_temp_value_label = NULL;
+static lv_obj_t * dashboard_temp_range_label = NULL;
+static lv_obj_t * dashboard_lux_card = NULL;
+static lv_obj_t * dashboard_lux_bar = NULL;
+static lv_obj_t * dashboard_lux_value_label = NULL;
+static lv_obj_t * dashboard_lux_range_label = NULL;
 static lv_obj_t * dashboard_schedule_label = NULL;
 static lv_obj_t * dashboard_schedule_state_label = NULL;
 static lv_obj_t * dashboard_water_label = NULL;
@@ -120,7 +133,7 @@ static void set_wifi_keyboard_visibility(bool hidden);
 static void reset_menu_view();
 static void update_network_status_label();
 static void create_network_settings_page();
-static void configure_dashboard_ph_widgets();
+static void configure_dashboard_widgets();
 static void fix_network_settings_layout();
 static void show_network_settings_page();
 static void open_menu_root();
@@ -157,7 +170,7 @@ static const uint16_t screenWidth  = 480;
 static const uint16_t screenHeight = 320;
 
 // --- SYSTEM GLOBALS ---
-float liveTemp = 0.0, liveHum = 0.0, liveSoil = 0.0, liveLux = 0.0, livePh = -1.0;
+float liveTemp = 0.0, liveHum = 0.0, liveSoil = 0.0, liveLux = 0.0;
 float tempLow = 68.0, tempHigh = 77.0;
 float humLow = 40.0, humHigh = 80.0;
 float soilLow = 30.0, soilHigh = 70.0;
@@ -615,10 +628,6 @@ bool push_live_values_to_firebase() {
   doc["soilMoisture"] = liveSoil;
   doc["liveLux"] = liveLux;
   doc["currentLux"] = liveLux;
-  if(livePh >= 0.0f) {
-    doc["livePh"] = livePh;
-    doc["currentPh"] = livePh;
-  }
 
   String payload;
   serializeJson(doc, payload);
@@ -862,7 +871,7 @@ void fix_layout_for_display() {
     lv_obj_add_flag(ui_Dashboard, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
     lv_obj_set_scroll_dir(ui_Dashboard, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(ui_Dashboard, LV_SCROLLBAR_MODE_AUTO);
-    lv_obj_set_style_pad_bottom(ui_Dashboard, 36, 0);
+    lv_obj_set_style_pad_bottom(ui_Dashboard, 220, 0);
   }
 
   if(ui_env_page) {
@@ -887,7 +896,7 @@ void fix_layout_for_display() {
   }
 
   fix_network_settings_layout();
-  configure_dashboard_ph_widgets();
+  configure_dashboard_widgets();
   ensure_lighting_timer_controls();
   ensure_watering_timer_controls();
   update_timer_labels();
@@ -1078,8 +1087,19 @@ static void water_timer_set_btn_cb(lv_event_t * e) {
 
 static void water_timer_reset_btn_cb(lv_event_t * e) {
   LV_UNUSED(e);
+  // If timer is off, turn it on and set to 1 hour
+  if(!waterTimerEnabled) {
+    waterTimerEnabled = true;
+    waterIntervalValue = 1;
+    waterIntervalUnit = 0; // Hour
+    if(water_timer_sw) {
+      lv_obj_add_state(water_timer_sw, LV_STATE_CHECKED);
+    }
+  }
+  
   schedule_next_watering(true);
   update_watering_timer_label();
+  triggerCloudPush = true;
   uiNeedsUpdate = true;
 }
 
@@ -1253,48 +1273,154 @@ static void create_network_settings_page() {
   fix_network_settings_layout();
 }
 
-static void configure_dashboard_ph_widgets() {
-  if(ui_Dashboard == NULL || ui_pHlabel == NULL || ui_Bar1 == NULL) return;
+static void configure_dashboard_widgets() {
+  if(ui_Dashboard == NULL) return;
 
-  if(lv_obj_get_parent(ui_pHlabel) != ui_Dashboard) lv_obj_set_parent(ui_pHlabel, ui_Dashboard);
-  if(lv_obj_get_parent(ui_Bar1) != ui_Dashboard) lv_obj_set_parent(ui_Bar1, ui_Dashboard);
+  // pH controls are intentionally removed from the dashboard layout.
+  if(ui_pHlabel != NULL) lv_obj_add_flag(ui_pHlabel, LV_OBJ_FLAG_HIDDEN);
+  if(ui_Bar1 != NULL) lv_obj_add_flag(ui_Bar1, LV_OBJ_FLAG_HIDDEN);
   if(ui_Image2 != NULL) lv_obj_add_flag(ui_Image2, LV_OBJ_FLAG_HIDDEN);
 
-  lv_obj_set_x(ui_pHlabel, 12);
-  lv_obj_set_y(ui_pHlabel, 164);
-  lv_obj_set_align(ui_pHlabel, LV_ALIGN_TOP_MID);
+  if(dashboard_hum_card == NULL) {
+    dashboard_hum_card = lv_obj_create(ui_Dashboard);
+    lv_obj_set_size(dashboard_hum_card, 212, 162);
+    lv_obj_align(dashboard_hum_card, LV_ALIGN_TOP_LEFT, 14, 10);
+    lv_obj_clear_flag(dashboard_hum_card, LV_OBJ_FLAG_SCROLLABLE);
 
-  lv_obj_set_width(ui_Bar1, 170);
-  lv_obj_set_height(ui_Bar1, 12);
-  lv_obj_set_x(ui_Bar1, 0);
-  lv_obj_set_y(ui_Bar1, 196);
-  lv_obj_set_align(ui_Bar1, LV_ALIGN_TOP_MID);
+    lv_obj_t * hum_title = lv_label_create(dashboard_hum_card);
+    lv_label_set_text(hum_title, "Humidity");
+    lv_obj_align(hum_title, LV_ALIGN_TOP_MID, 0, 2);
+
+    dashboard_hum_arc = lv_arc_create(dashboard_hum_card);
+    lv_obj_set_size(dashboard_hum_arc, 106, 106);
+    lv_arc_set_range(dashboard_hum_arc, 0, 100);
+    lv_arc_set_bg_angles(dashboard_hum_arc, 0, 360);
+    lv_arc_set_rotation(dashboard_hum_arc, 270);
+    lv_obj_remove_style(dashboard_hum_arc, NULL, LV_PART_KNOB);
+    lv_obj_set_style_arc_width(dashboard_hum_arc, 11, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(dashboard_hum_arc, 11, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(dashboard_hum_arc, lv_palette_lighten(LV_PALETTE_GREY, 2), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(dashboard_hum_arc, lv_palette_main(LV_PALETTE_BLUE), LV_PART_INDICATOR);
+    lv_obj_align(dashboard_hum_arc, LV_ALIGN_CENTER, 0, 10);
+
+    dashboard_hum_value_label = lv_label_create(dashboard_hum_arc);
+    lv_label_set_text(dashboard_hum_value_label, "0%");
+    lv_obj_center(dashboard_hum_value_label);
+  }
+
+  if(dashboard_soil_card == NULL) {
+    dashboard_soil_card = lv_obj_create(ui_Dashboard);
+    lv_obj_set_size(dashboard_soil_card, 212, 162);
+    lv_obj_align(dashboard_soil_card, LV_ALIGN_TOP_RIGHT, -14, 10);
+    lv_obj_clear_flag(dashboard_soil_card, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * soil_title = lv_label_create(dashboard_soil_card);
+    lv_label_set_text(soil_title, "Moisture");
+    lv_obj_align(soil_title, LV_ALIGN_TOP_MID, 0, 2);
+
+    dashboard_soil_arc = lv_arc_create(dashboard_soil_card);
+    lv_obj_set_size(dashboard_soil_arc, 106, 106);
+    lv_arc_set_range(dashboard_soil_arc, 0, 100);
+    lv_arc_set_bg_angles(dashboard_soil_arc, 0, 360);
+    lv_arc_set_rotation(dashboard_soil_arc, 270);
+    lv_obj_remove_style(dashboard_soil_arc, NULL, LV_PART_KNOB);
+    lv_obj_set_style_arc_width(dashboard_soil_arc, 11, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(dashboard_soil_arc, 11, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(dashboard_soil_arc, lv_palette_lighten(LV_PALETTE_GREY, 2), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(dashboard_soil_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
+    lv_obj_align(dashboard_soil_arc, LV_ALIGN_CENTER, 0, 10);
+
+    dashboard_soil_value_label = lv_label_create(dashboard_soil_arc);
+    lv_label_set_text(dashboard_soil_value_label, "0%");
+    lv_obj_center(dashboard_soil_value_label);
+  }
+
+  if(dashboard_temp_card == NULL) {
+    dashboard_temp_card = lv_obj_create(ui_Dashboard);
+    lv_obj_set_size(dashboard_temp_card, 438, 96);
+    lv_obj_align(dashboard_temp_card, LV_ALIGN_TOP_MID, 0, 182);
+    lv_obj_clear_flag(dashboard_temp_card, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * temp_title = lv_label_create(dashboard_temp_card);
+    lv_label_set_text(temp_title, "Temperature");
+    lv_obj_align(temp_title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    dashboard_temp_value_label = lv_label_create(dashboard_temp_card);
+    lv_label_set_text(dashboard_temp_value_label, "0 F");
+    lv_obj_set_style_text_color(dashboard_temp_value_label, lv_palette_darken(LV_PALETTE_RED, 1), 0);
+    lv_obj_align(dashboard_temp_value_label, LV_ALIGN_TOP_RIGHT, 0, 0);
+
+    dashboard_temp_bar = lv_bar_create(dashboard_temp_card);
+    lv_obj_set_size(dashboard_temp_bar, 380, 20);
+    lv_obj_align(dashboard_temp_bar, LV_ALIGN_TOP_MID, 0, 30);
+    lv_obj_set_style_radius(dashboard_temp_bar, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(dashboard_temp_bar, LV_OPA_40, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(dashboard_temp_bar, lv_palette_lighten(LV_PALETTE_RED, 4), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(dashboard_temp_bar, lv_palette_main(LV_PALETTE_RED), LV_PART_INDICATOR);
+
+    lv_obj_t * temp_bulb = lv_obj_create(dashboard_temp_card);
+    lv_obj_set_size(temp_bulb, 24, 24);
+    lv_obj_align_to(temp_bulb, dashboard_temp_bar, LV_ALIGN_OUT_LEFT_MID, 2, 0);
+    lv_obj_set_style_radius(temp_bulb, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(temp_bulb, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_set_style_border_width(temp_bulb, 0, 0);
+    lv_obj_clear_flag(temp_bulb, LV_OBJ_FLAG_SCROLLABLE);
+
+    dashboard_temp_range_label = lv_label_create(dashboard_temp_card);
+    lv_label_set_text(dashboard_temp_range_label, "Min 0   Max 0");
+    lv_obj_align(dashboard_temp_range_label, LV_ALIGN_BOTTOM_MID, 0, 0);
+  }
+
+  if(dashboard_lux_card == NULL) {
+    dashboard_lux_card = lv_obj_create(ui_Dashboard);
+    lv_obj_set_size(dashboard_lux_card, 438, 90);
+    lv_obj_align(dashboard_lux_card, LV_ALIGN_TOP_MID, 0, 286);
+    lv_obj_clear_flag(dashboard_lux_card, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * lux_title = lv_label_create(dashboard_lux_card);
+    lv_label_set_text(lux_title, "Light");
+    lv_obj_align(lux_title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    dashboard_lux_value_label = lv_label_create(dashboard_lux_card);
+    lv_label_set_text(dashboard_lux_value_label, "0 lux");
+    lv_obj_align(dashboard_lux_value_label, LV_ALIGN_TOP_RIGHT, 0, 0);
+
+    dashboard_lux_bar = lv_bar_create(dashboard_lux_card);
+    lv_obj_set_size(dashboard_lux_bar, 380, 18);
+    lv_obj_align(dashboard_lux_bar, LV_ALIGN_TOP_MID, 0, 30);
+    lv_obj_set_style_radius(dashboard_lux_bar, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(dashboard_lux_bar, LV_OPA_40, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(dashboard_lux_bar, lv_palette_lighten(LV_PALETTE_BLUE, 3), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(dashboard_lux_bar, lv_palette_main(LV_PALETTE_BLUE), LV_PART_INDICATOR);
+
+    dashboard_lux_range_label = lv_label_create(dashboard_lux_card);
+    lv_label_set_text(dashboard_lux_range_label, "Min 0   Max 0");
+    lv_obj_align(dashboard_lux_range_label, LV_ALIGN_BOTTOM_MID, 0, 0);
+  }
 
   if(dashboard_schedule_label == NULL) {
     dashboard_schedule_label = lv_label_create(ui_Dashboard);
     lv_obj_set_width(dashboard_schedule_label, 280);
     lv_label_set_long_mode(dashboard_schedule_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(dashboard_schedule_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(dashboard_schedule_label, LV_ALIGN_TOP_MID, 0, 228);
   }
+  lv_obj_align(dashboard_schedule_label, LV_ALIGN_TOP_MID, 0, 390);
 
   if(dashboard_schedule_state_label == NULL) {
     dashboard_schedule_state_label = lv_label_create(ui_Dashboard);
     lv_obj_set_width(dashboard_schedule_state_label, 280);
     lv_label_set_long_mode(dashboard_schedule_state_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(dashboard_schedule_state_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(dashboard_schedule_state_label, LV_ALIGN_TOP_MID, 0, 256);
   }
+  lv_obj_align(dashboard_schedule_state_label, LV_ALIGN_TOP_MID, 0, 418);
 
   if(dashboard_water_label == NULL) {
     dashboard_water_label = lv_label_create(ui_Dashboard);
     lv_obj_set_width(dashboard_water_label, 280);
     lv_label_set_long_mode(dashboard_water_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(dashboard_water_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(dashboard_water_label, LV_ALIGN_TOP_MID, 0, 292);
   }
-
-  dashboard_ph_value_label = ui_pHlabel;
+  lv_obj_align(dashboard_water_label, LV_ALIGN_TOP_MID, 0, 452);
 }
 
 static void ensure_lighting_timer_controls() {
@@ -1317,9 +1443,21 @@ static void ensure_lighting_timer_controls() {
   lv_obj_align(lighting_timer_card, LV_ALIGN_TOP_MID, 0, 132);
   lv_obj_set_style_pad_all(lighting_timer_card, 12, 0);
 
-  lighting_timer_title = lv_label_create(lighting_timer_card);
+  lv_obj_t * lighting_title_box = lv_obj_create(lighting_timer_card);
+  lv_obj_set_size(lighting_title_box, 178, 30);
+  lv_obj_align(lighting_title_box, LV_ALIGN_TOP_LEFT, 0, 0);
+  lv_obj_clear_flag(lighting_title_box, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_pad_all(lighting_title_box, 0, 0);
+  lv_obj_set_style_radius(lighting_title_box, 10, 0);
+  lv_obj_set_style_bg_color(lighting_title_box, lv_color_hex(0x6B1D1D), 0);
+  lv_obj_set_style_bg_opa(lighting_title_box, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(lighting_title_box, 2, 0);
+  lv_obj_set_style_border_color(lighting_title_box, lv_palette_lighten(LV_PALETTE_RED, 2), 0);
+
+  lighting_timer_title = lv_label_create(lighting_title_box);
   lv_label_set_text(lighting_timer_title, "Lighting Timer");
-  lv_obj_align(lighting_timer_title, LV_ALIGN_TOP_LEFT, 0, 0);
+  lv_obj_set_style_text_color(lighting_timer_title, lv_color_white(), 0);
+  lv_obj_center(lighting_timer_title);
 
   if(timer_sw == NULL) {
     timer_sw = lv_switch_create(lighting_timer_card);
@@ -1365,9 +1503,21 @@ static void ensure_watering_timer_controls() {
   lv_obj_add_flag(watering_timer_card, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
   lv_obj_add_flag(watering_timer_card, LV_OBJ_FLAG_GESTURE_BUBBLE);
 
-  lv_obj_t * title = lv_label_create(watering_timer_card);
+  lv_obj_t * watering_title_box = lv_obj_create(watering_timer_card);
+  lv_obj_set_size(watering_title_box, 198, 30);
+  lv_obj_align(watering_title_box, LV_ALIGN_TOP_LEFT, 0, 0);
+  lv_obj_clear_flag(watering_title_box, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_pad_all(watering_title_box, 0, 0);
+  lv_obj_set_style_radius(watering_title_box, 10, 0);
+  lv_obj_set_style_bg_color(watering_title_box, lv_color_hex(0x0F4C75), 0);
+  lv_obj_set_style_bg_opa(watering_title_box, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(watering_title_box, 2, 0);
+  lv_obj_set_style_border_color(watering_title_box, lv_palette_lighten(LV_PALETTE_BLUE, 2), 0);
+
+  lv_obj_t * title = lv_label_create(watering_title_box);
   lv_label_set_text(title, "Water Pump Timer");
-  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
+  lv_obj_set_style_text_color(title, lv_color_white(), 0);
+  lv_obj_center(title);
 
   water_timer_sw = lv_switch_create(watering_timer_card);
   lv_obj_align(water_timer_sw, LV_ALIGN_TOP_RIGHT, 0, 0);
@@ -1720,15 +1870,65 @@ void update_ui_from_data() {
     snprintf(buf_txt, sizeof(buf_txt), "Light: %.0f lux", liveLux);
     lv_label_set_text(ui_lux_label, buf_txt);
   }
-  if(dashboard_ph_value_label) {
-    if(livePh >= 0.0f) snprintf(buf_txt, sizeof(buf_txt), "pH: %.2f", livePh);
-    else snprintf(buf_txt, sizeof(buf_txt), "pH: --.--");
-    lv_label_set_text(dashboard_ph_value_label, buf_txt);
+
+  if(dashboard_hum_arc) {
+    int humPct = (int)lroundf(fminf(fmaxf(liveHum, 0.0f), 100.0f));
+    lv_arc_set_value(dashboard_hum_arc, humPct);
+    if(dashboard_hum_value_label) {
+      snprintf(buf_txt, sizeof(buf_txt), "%d%%", humPct);
+      lv_label_set_text(dashboard_hum_value_label, buf_txt);
+    }
   }
-  if(ui_Bar1) {
-    int ph_value = livePh >= 0.0f ? (int)lroundf(fminf(fmaxf(livePh, 0.0f), 14.0f)) : 0;
-    lv_bar_set_value(ui_Bar1, ph_value, LV_ANIM_OFF);
+
+  if(dashboard_soil_arc) {
+    int soilPct = (int)lroundf(fminf(fmaxf(liveSoil, 0.0f), 100.0f));
+    lv_arc_set_value(dashboard_soil_arc, soilPct);
+    if(dashboard_soil_value_label) {
+      snprintf(buf_txt, sizeof(buf_txt), "%d%%", soilPct);
+      lv_label_set_text(dashboard_soil_value_label, buf_txt);
+    }
   }
+
+  if(dashboard_temp_bar) {
+    float displayLive = useFahrenheit ? liveTemp : ((liveTemp - 32.0f) * 5.0f / 9.0f);
+    float displayLow = useFahrenheit ? tempLow : ((tempLow - 32.0f) * 5.0f / 9.0f);
+    float displayHigh = useFahrenheit ? tempHigh : ((tempHigh - 32.0f) * 5.0f / 9.0f);
+    if(displayHigh <= displayLow) displayHigh = displayLow + 1.0f;
+
+    int minT = (int)floorf(displayLow);
+    int maxT = (int)ceilf(displayHigh);
+    int liveT = (int)lroundf(fminf(fmaxf(displayLive, displayLow), displayHigh));
+
+    lv_bar_set_range(dashboard_temp_bar, minT, maxT);
+    lv_bar_set_value(dashboard_temp_bar, liveT, LV_ANIM_OFF);
+
+    if(dashboard_temp_value_label) {
+      snprintf(buf_txt, sizeof(buf_txt), "%.1f %s", displayLive, useFahrenheit ? "F" : "C");
+      lv_label_set_text(dashboard_temp_value_label, buf_txt);
+    }
+    if(dashboard_temp_range_label) {
+      snprintf(buf_txt, sizeof(buf_txt), "Min %.0f   Max %.0f %s", displayLow, displayHigh, useFahrenheit ? "F" : "C");
+      lv_label_set_text(dashboard_temp_range_label, buf_txt);
+    }
+  }
+
+  if(dashboard_lux_bar) {
+    int maxLux = (int)lroundf(fmaxf(luxThreshold, 1.0f));
+    int liveLuxClamped = (int)lroundf(fminf(fmaxf(liveLux, 0.0f), (float)maxLux));
+
+    lv_bar_set_range(dashboard_lux_bar, 0, maxLux);
+    lv_bar_set_value(dashboard_lux_bar, liveLuxClamped, LV_ANIM_OFF);
+
+    if(dashboard_lux_value_label) {
+      snprintf(buf_txt, sizeof(buf_txt), "%.0f lux", liveLux);
+      lv_label_set_text(dashboard_lux_value_label, buf_txt);
+    }
+    if(dashboard_lux_range_label) {
+      snprintf(buf_txt, sizeof(buf_txt), "Min 0   Max %.0f lux", luxThreshold);
+      lv_label_set_text(dashboard_lux_range_label, buf_txt);
+    }
+  }
+
   update_network_status_label();
 
   // UART status indicator on dashboard
@@ -1944,12 +2144,6 @@ void checkSerialSensors() {
       Serial.print("  -> liveSoil = "); Serial.println(liveSoil);
       changed = true;
     }
-    if(parseTaggedFloat(data, "PH:", value) || parseTaggedFloat(data, "pH:", value) || parseTaggedFloat(data, "P:", value)) {
-      livePh = fminf(fmaxf(value, 0.0f), 14.0f);
-      Serial.print("  -> livePh = "); Serial.println(livePh);
-      changed = true;
-    }
-
     if(changed) {
       lastSerialRecv = millis();
       uiNeedsUpdate = true;
@@ -2029,7 +2223,7 @@ void setup() {
   // --- MAP SQUARELINE OBJECTS ---
   tabview = ui_TabView1;
   create_network_settings_page();
-  configure_dashboard_ph_widgets();
+  configure_dashboard_widgets();
 
   if(tabview) {
     lv_obj_add_event_cb(tabview, tabview_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
