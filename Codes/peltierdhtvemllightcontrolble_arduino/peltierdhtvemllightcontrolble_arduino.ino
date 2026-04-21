@@ -387,8 +387,8 @@ void setup() {
     Serial.println("ERROR: SHT41 NOT found. Check Qwiic connection.");
   }
   
-  Wire.begin();
-  if (veml.begin()) {
+  Wire1.begin();
+  if (veml.begin(&Wire1)) {
     veml_found = true;
     veml.setGain(VEML7700_GAIN_1);
     veml.setIntegrationTime(VEML7700_IT_100MS);
