@@ -85,11 +85,11 @@
         <div class="card card-cam">
             <div class="group-title">🌿 Plant AI Scanner</div>
             
-            <div class="slider-container" style="margin-bottom: 20px;">
-                <div class="slider-labels"><span>Flash Brightness</span> <span class="val" id="flashVal">0%</span></div>
-                <div class="dual-slider">
-                    <div class="slider-track" id="flashTrack"></div>
-                    <input type="range" id="flashSlider" min="0" max="100" value="0" step="1" oninput="updateSingles()" onchange="finalizeFlash()">
+            <div style="margin-bottom: 20px; width: 100%;">
+                <div class="slider-labels" style="margin-bottom: 12px;"><span>Camera Flash</span> <span class="val" id="flashState">OFF</span></div>
+                <div class="btn-row" style="width: 100%;">
+                    <button class="btn-term" id="flashOnBtn" style="color: var(--c-cam); border-color: var(--c-cam);" onclick="setFlash(true)">Turn ON</button>
+                    <button class="btn-term" id="flashOffBtn" style="color: var(--muted); border-color: rgba(255,255,255,0.2);" onclick="setFlash(false)">Turn OFF</button>
                 </div>
             </div>
 
@@ -238,34 +238,20 @@
         const settingsRef = ref(db, 'settings');
         const PLANTNET_KEY = "2b10r2kgy7B3WbTrm7jRs5Jqx"; 
 
-        let flashTimeout = null;
-
         window.updateSingles = function() {
-            const flash = document.getElementById("flashSlider").value;
-            document.getElementById("flashVal").textContent = flash + "%";
-            document.getElementById("flashTrack").style.width = flash + "%";
-            
-            // The Throttled Network Request (Updates safely 10x a second)
-            if(activeCameraIp && !flashTimeout) {
-                flashTimeout = setTimeout(() => {
-                    const currentVal = document.getElementById('flashSlider').value;
-                    let pwmValue = Math.round((currentVal / 100) * 255);
-                    fetch(`${activeCameraIp}/flash?v=${pwmValue}`).catch(() => {});
-                    flashTimeout = null;
-                }, 100);
-            }
-
             document.getElementById("luxVal").textContent = document.getElementById("luxThreshold").value + " lux";
             document.getElementById("brightVal").textContent = document.getElementById("globalBrightness").value + " / 10";
             let tz = parseInt(document.getElementById("timeZoneOffset").value);
             document.getElementById("tzVal").textContent = "UTC " + (tz >= 0 ? "+" : "") + tz;
         }
 
-        // Send final precise value when you let go
-        window.finalizeFlash = function() {
+        window.setFlash = function(isOn) {
+            // Update the label UI
+            document.getElementById('flashState').textContent = isOn ? "ON" : "OFF";
+            
+            // Send full brightness (255) for ON, and (0) for OFF
             if(activeCameraIp) {
-                const val = document.getElementById('flashSlider').value;
-                let pwmValue = Math.round((val / 100) * 255);
+                let pwmValue = isOn ? 255 : 0;
                 fetch(`${activeCameraIp}/flash?v=${pwmValue}`).catch(() => {});
             }
         };
