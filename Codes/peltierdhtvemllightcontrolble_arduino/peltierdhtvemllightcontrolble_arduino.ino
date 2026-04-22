@@ -302,13 +302,18 @@ void processCommand(String cmd) {
     if (v >= 0) { highLuxThreshold = v; Serial.print("High threshold set to "); Serial.println(highLuxThreshold); } 
     else { Serial.println("Usage: high <lux>"); }
   }
-  else if (key == "lvl") {
+ else if (key == "lvl") {
     int lv = val.toInt();
     if (lv >= 1 && lv <= 3) {
       level = lv;
+      autoMode = false; // <--- ADDED: Turns off the automatic light sensor
+      turnOn();         // <--- ADDED: Instantly turns the LEDs on at the new level
+      
       Serial.print("Level set to "); Serial.println(level);
-      if (ledOn) { applyPwm(pwmForLevel(level)); Serial.print("Applied PWM "); Serial.println(pwmForLevel(level)); }
-    } else { Serial.println("Usage: lvl 1, 2, or 3"); }
+      Serial.println("Manual light mode enabled");
+    } else { 
+      Serial.println("Usage: lvl 1, 2, or 3"); 
+    }
   }
   else {
     Serial.println("Unknown command. Type: help");
