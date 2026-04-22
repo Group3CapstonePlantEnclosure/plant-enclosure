@@ -101,6 +101,8 @@ static lv_obj_t * override_light_mode_label = NULL;
 static lv_obj_t * override_peltier_auto_btn = NULL;
 static lv_obj_t * override_peltier_auto_label = NULL;
 static int overrideLightModeState = 0;
+static int overridePeltierModeState = 0;
+static String manualPeltierCommand = "CMD:COOL";
 
 // --- TIME PICKER UI VARIABLES ---
 lv_obj_t * time_picker_bg = NULL;
@@ -185,6 +187,10 @@ float tempLow = 68.0, tempHigh = 77.0;
 float humLow = 40.0, humHigh = 80.0;
 float soilLow = 30.0, soilHigh = 70.0;
 float luxThreshold = 30000;
+
+static constexpr float TEMP_CONTROL_MIN_F = 40.0f;
+static constexpr float TEMP_CONTROL_MAX_F = 100.0f;
+static constexpr float LUX_CONTROL_MAX = 10000.0f;
 
 bool useFahrenheit = true; 
 bool isDarkMode = true; 
@@ -804,8 +810,8 @@ void load_settings_from_firebase() {
   else if(!doc["soil"]["high"].isNull() && fabsf(doc["soil"]["high"].as<float>() - soilHigh) > 0.05f) { soilHigh = doc["soil"]["high"].as<float>(); changed = true; }
   else if(!doc["moisture"]["high"].isNull() && fabsf(doc["moisture"]["high"].as<float>() - soilHigh) > 0.05f) { soilHigh = doc["moisture"]["high"].as<float>(); changed = true; }
 
-  if(!doc["luxThreshold"].isNull() && fabsf(doc["luxThreshold"].as<float>() - luxThreshold) > 0.5f) { luxThreshold = constrain(doc["luxThreshold"].as<float>(), 0.0f, 40000.0f); changed = true; }
-  else if(!doc["lighting"]["luxThreshold"].isNull() && fabsf(doc["lighting"]["luxThreshold"].as<float>() - luxThreshold) > 0.5f) { luxThreshold = constrain(doc["lighting"]["luxThreshold"].as<float>(), 0.0f, 40000.0f); changed = true; }
+  if(!doc["luxThreshold"].isNull() && fabsf(doc["luxThreshold"].as<float>() - luxThreshold) > 0.5f) { luxThreshold = constrain(doc["luxThreshold"].as<float>(), 0.0f, LUX_CONTROL_MAX); changed = true; }
+  else if(!doc["lighting"]["luxThreshold"].isNull() && fabsf(doc["lighting"]["luxThreshold"].as<float>() - luxThreshold) > 0.5f) { luxThreshold = constrain(doc["lighting"]["luxThreshold"].as<float>(), 0.0f, LUX_CONTROL_MAX); changed = true; }
 
   // Live UART sensor values are source-of-truth on ESP32 and should not be overwritten from cloud sync.
 
@@ -1066,9 +1072,14 @@ void temp_range_slider_cb(lv_event_t * e) {
   if(code == LV_EVENT_VALUE_CHANGED || code == LV_EVENT_RELEASED) {
     float sliderLow = lv_slider_get_left_value(slider);
     float sliderHigh = lv_slider_get_value(slider);
-    tempLow = useFahrenheit ? sliderLow : (sliderLow * 9.0f / 5.0f + 32.0f);
-    tempHigh = useFahrenheit ? sliderHigh : (sliderHigh * 9.0f / 5.0f + 32.0f);
-    char buf[64]; snprintf(buf, sizeof(buf), "Temperature: %.0f - %.0f \xb0%s", sliderLow, sliderHigh, useFahrenheit ? "F" : "C");
+    float nextLowF = useFahrenheit ? sliderLow : (sliderLow * 9.0f / 5.0f + 32.0f);
+    float nextHighF = useFahrenheit ? sliderHigh : (sliderHigh * 9.0f / 5.0f + 32.0f);
+    tempLow = constrain(nextLowF, TEMP_CONTROL_MIN_F, TEMP_CONTROL_MAX_F);
+    tempHigh = constrain(nextHighF, TEMP_CONTROL_MIN_F, TEMP_CONTROL_MAX_F);
+
+    float displayLow = useFahrenheit ? tempLow : ((tempLow - 32.0f) * 5.0f / 9.0f);
+    float displayHigh = useFahrenheit ? tempHigh : ((tempHigh - 32.0f) * 5.0f / 9.0f);
+    char buf[64]; snprintf(buf, sizeof(buf), "Temperature: %.0f - %.0f \xb0%s", displayLow, displayHigh, useFahrenheit ? "F" : "C");
     if(temp_slider_label) lv_label_set_text(temp_slider_label, buf);
   }
   if(code == LV_EVENT_RELEASED) triggerCloudPush = true; 
@@ -1102,7 +1113,7 @@ void lux_slider_cb(lv_event_t * e) {
   lv_obj_t * slider = lv_event_get_target(e);
   lv_event_code_t code = lv_event_get_code(e);
   if(code == LV_EVENT_VALUE_CHANGED || code == LV_EVENT_RELEASED) {
-    luxThreshold = constrain((float)lv_slider_get_value(slider), 0.0f, 40000.0f);
+    luxThreshold = constrain((float)lv_slider_get_value(slider), 0.0f, LUX_CONTROL_MAX);
     if(lux_slider_label) {
       char buf[32];
       snprintf(buf, sizeof(buf), "%d lux", (int)lroundf(luxThreshold));
@@ -1130,18 +1141,31 @@ static void water_timer_set_btn_cb(lv_event_t * e) {
   open_water_timer_picker();
 }
 
-static void water_timer_reset_btn_cb(lv_event_t * e) {
-  LV_UNUSED(e);
-  // If timer is off, turn it on and set to 1 hour
-  if(!waterTimerEnabled) {
-    waterTimerEnabled = true;
-    waterIntervalValue = 1;
-    waterIntervalUnit = 0; // Hour
-    if(water_timer_sw) {
-      lv_obj_add_state(water_timer_sw, LV_STATE_CHECKED);
-    }
+static void water_timer_reset_press_lock_cb(lv_event_t * e) {
+  if(ui_env_page == NULL) return;
+
+  lv_event_code_t code = lv_event_get_code(e);
+  if(code == LV_EVENT_PRESSED) {
+    lv_obj_clear_flag(ui_env_page, LV_OBJ_FLAG_SCROLLABLE);
+  } else if(code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST || code == LV_EVENT_CLICKED || code == LV_EVENT_SHORT_CLICKED) {
+    lv_obj_add_flag(ui_env_page, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(ui_env_page, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
   }
-  
+}
+
+static void water_timer_reset_btn_cb(lv_event_t * e) {
+  lv_event_code_t code = lv_event_get_code(e);
+  if(code != LV_EVENT_CLICKED && code != LV_EVENT_SHORT_CLICKED && code != LV_EVENT_RELEASED) return;
+
+  // Reset to "Water every 1 Hour" and keep timer disabled.
+  waterIntervalValue = 1;
+  waterIntervalUnit = 0;
+  waterTimerEnabled = false;
+  if(water_timer_sw) lv_obj_clear_state(water_timer_sw, LV_STATE_CHECKED);
+
+  // Request immediate pump stop.
+  send_override_command("CMD:WATER_PUMP_OFF", "CMD:WATER_PUMP_OFF");
+
   schedule_next_watering(true);
   update_watering_timer_label();
   triggerCloudPush = true;
@@ -1187,11 +1211,17 @@ static void override_page_open_cb(lv_event_t * e) {
 
 static void override_cooling_btn_cb(lv_event_t * e) {
   LV_UNUSED(e);
+  manualPeltierCommand = "CMD:COOL";
+  overridePeltierModeState = 1;
+  if(override_peltier_auto_label) lv_label_set_text(override_peltier_auto_label, "Peltier: ON");
   send_override_command("CMD:COOL", "CMD:COOL");
 }
 
 static void override_heating_btn_cb(lv_event_t * e) {
   LV_UNUSED(e);
+  manualPeltierCommand = "CMD:HEAT";
+  overridePeltierModeState = 1;
+  if(override_peltier_auto_label) lv_label_set_text(override_peltier_auto_label, "Peltier: ON");
   send_override_command("CMD:HEAT", "CMD:HEAT");
 }
 
@@ -1202,16 +1232,22 @@ static void override_mist_btn_cb(lv_event_t * e) {
 
 static void override_light_lvl1_btn_cb(lv_event_t * e) {
   LV_UNUSED(e);
+  overrideLightModeState = 1;
+  if(override_light_mode_label) lv_label_set_text(override_light_mode_label, "Light: ON");
   send_override_command("lvl 1", "lvl 1");
 }
 
 static void override_light_lvl2_btn_cb(lv_event_t * e) {
   LV_UNUSED(e);
+  overrideLightModeState = 1;
+  if(override_light_mode_label) lv_label_set_text(override_light_mode_label, "Light: ON");
   send_override_command("lvl 2", "lvl 2");
 }
 
 static void override_light_lvl3_btn_cb(lv_event_t * e) {
   LV_UNUSED(e);
+  overrideLightModeState = 1;
+  if(override_light_mode_label) lv_label_set_text(override_light_mode_label, "Light: ON");
   send_override_command("lvl 3", "lvl 3");
 }
 
@@ -1228,15 +1264,15 @@ static void override_clean_sensor_btn_cb(lv_event_t * e) {
 static void override_light_mode_btn_cb(lv_event_t * e) {
   LV_UNUSED(e);
   if(overrideLightModeState == 0) {
-    send_override_command("on", "light on");
+    send_override_command("light on", "light on");
     overrideLightModeState = 1;
     if(override_light_mode_label) lv_label_set_text(override_light_mode_label, "Light: ON");
   } else if(overrideLightModeState == 1) {
-    send_override_command("off", "light off");
+    send_override_command("light off", "light off");
     overrideLightModeState = 2;
     if(override_light_mode_label) lv_label_set_text(override_light_mode_label, "Light: OFF");
   } else {
-    send_override_command("auto", "light auto");
+    send_override_command("light auto", "light auto");
     overrideLightModeState = 0;
     if(override_light_mode_label) lv_label_set_text(override_light_mode_label, "Light: AUTO");
   }
@@ -1244,7 +1280,19 @@ static void override_light_mode_btn_cb(lv_event_t * e) {
 
 static void override_peltier_auto_btn_cb(lv_event_t * e) {
   LV_UNUSED(e);
-  send_override_command("peltier auto", "peltier auto");
+  if(overridePeltierModeState == 0) {
+    overridePeltierModeState = 1;
+    if(override_peltier_auto_label) lv_label_set_text(override_peltier_auto_label, "Peltier: ON");
+    send_override_command(manualPeltierCommand.c_str(), manualPeltierCommand.c_str());
+  } else if(overridePeltierModeState == 1) {
+    overridePeltierModeState = 2;
+    if(override_peltier_auto_label) lv_label_set_text(override_peltier_auto_label, "Peltier: OFF");
+    send_override_command("CMD:PELTIER_OFF", "CMD:PELTIER_OFF");
+  } else {
+    overridePeltierModeState = 0;
+    if(override_peltier_auto_label) lv_label_set_text(override_peltier_auto_label, "Peltier: AUTO");
+    send_override_command("peltier auto", "peltier auto");
+  }
 }
 
 // ==========================================
@@ -1481,6 +1529,8 @@ static void configure_dashboard_widgets() {
     dashboard_temp_bar = lv_bar_create(dashboard_temp_card);
     lv_obj_set_size(dashboard_temp_bar, 380, 20);
     lv_obj_align(dashboard_temp_bar, LV_ALIGN_TOP_MID, 0, 30);
+    lv_bar_set_range(dashboard_temp_bar, 30, 110);
+    lv_bar_set_value(dashboard_temp_bar, 30, LV_ANIM_OFF);
     lv_obj_set_style_radius(dashboard_temp_bar, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(dashboard_temp_bar, LV_OPA_40, LV_PART_MAIN);
     lv_obj_set_style_bg_color(dashboard_temp_bar, lv_palette_lighten(LV_PALETTE_RED, 4), LV_PART_MAIN);
@@ -1513,6 +1563,8 @@ static void configure_dashboard_widgets() {
     dashboard_lux_bar = lv_bar_create(dashboard_lux_card);
     lv_obj_set_size(dashboard_lux_bar, 380, 18);
     lv_obj_align(dashboard_lux_bar, LV_ALIGN_TOP_MID, 0, 30);
+    lv_bar_set_range(dashboard_lux_bar, 0, 10000);
+    lv_bar_set_value(dashboard_lux_bar, 0, LV_ANIM_OFF);
     lv_obj_set_style_radius(dashboard_lux_bar, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(dashboard_lux_bar, LV_OPA_40, LV_PART_MAIN);
     lv_obj_set_style_bg_color(dashboard_lux_bar, lv_palette_lighten(LV_PALETTE_BLUE, 3), LV_PART_MAIN);
@@ -1599,8 +1651,9 @@ static void ensure_lighting_timer_controls() {
   if(timer_sw == NULL) {
     timer_sw = lv_switch_create(lighting_timer_card);
     lv_obj_align(timer_sw, LV_ALIGN_TOP_RIGHT, 0, 0);
-    lv_obj_add_flag(timer_sw, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
-    lv_obj_add_flag(timer_sw, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_clear_flag(timer_sw, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+    lv_obj_clear_flag(timer_sw, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_clear_flag(timer_sw, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
     lv_obj_add_event_cb(timer_sw, timer_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
   }
 
@@ -1613,8 +1666,9 @@ static void ensure_lighting_timer_controls() {
   lighting_set_on_btn = lv_btn_create(lighting_timer_card);
   lv_obj_set_size(lighting_set_on_btn, 132, 36);
   lv_obj_align(lighting_set_on_btn, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-  lv_obj_add_flag(lighting_set_on_btn, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
-  lv_obj_add_flag(lighting_set_on_btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  lv_obj_clear_flag(lighting_set_on_btn, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  lv_obj_clear_flag(lighting_set_on_btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  lv_obj_clear_flag(lighting_set_on_btn, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
   lv_obj_add_event_cb(lighting_set_on_btn, lighting_set_on_btn_cb, LV_EVENT_CLICKED, NULL);
   lv_obj_t * onBtnLabel = lv_label_create(lighting_set_on_btn);
   lv_label_set_text(onBtnLabel, "Set Start");
@@ -1623,8 +1677,9 @@ static void ensure_lighting_timer_controls() {
   lighting_set_off_btn = lv_btn_create(lighting_timer_card);
   lv_obj_set_size(lighting_set_off_btn, 132, 36);
   lv_obj_align(lighting_set_off_btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-  lv_obj_add_flag(lighting_set_off_btn, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
-  lv_obj_add_flag(lighting_set_off_btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  lv_obj_clear_flag(lighting_set_off_btn, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  lv_obj_clear_flag(lighting_set_off_btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  lv_obj_clear_flag(lighting_set_off_btn, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
   lv_obj_add_event_cb(lighting_set_off_btn, lighting_set_off_btn_cb, LV_EVENT_CLICKED, NULL);
   lv_obj_t * offBtnLabel = lv_label_create(lighting_set_off_btn);
   lv_label_set_text(offBtnLabel, "Set Stop");
@@ -1664,15 +1719,17 @@ static void ensure_watering_timer_controls() {
 
   water_timer_sw = lv_switch_create(watering_timer_card);
   lv_obj_align(water_timer_sw, LV_ALIGN_TOP_RIGHT, 0, 0);
-  lv_obj_add_flag(water_timer_sw, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
-  lv_obj_add_flag(water_timer_sw, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  lv_obj_clear_flag(water_timer_sw, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  lv_obj_clear_flag(water_timer_sw, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  lv_obj_clear_flag(water_timer_sw, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
   lv_obj_add_event_cb(water_timer_sw, water_timer_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
   water_timer_set_btn = lv_btn_create(watering_timer_card);
   lv_obj_set_size(water_timer_set_btn, 244, 40);
   lv_obj_align(water_timer_set_btn, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-  lv_obj_add_flag(water_timer_set_btn, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
-  lv_obj_add_flag(water_timer_set_btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  lv_obj_clear_flag(water_timer_set_btn, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  lv_obj_clear_flag(water_timer_set_btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  lv_obj_clear_flag(water_timer_set_btn, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
   lv_obj_add_event_cb(water_timer_set_btn, water_timer_set_btn_cb, LV_EVENT_CLICKED, NULL);
   water_timer_set_label = lv_label_create(water_timer_set_btn);
   lv_label_set_text(water_timer_set_label, "Water every 1 Day");
@@ -1688,9 +1745,18 @@ static void ensure_watering_timer_controls() {
   lv_obj_set_size(water_timer_reset_btn, 40, 40);
   lv_obj_align(water_timer_reset_btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
   lv_obj_set_style_radius(water_timer_reset_btn, 12, 0);
-  lv_obj_add_flag(water_timer_reset_btn, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
-  lv_obj_add_flag(water_timer_reset_btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  lv_obj_clear_flag(water_timer_reset_btn, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  lv_obj_clear_flag(water_timer_reset_btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  lv_obj_add_flag(water_timer_reset_btn, LV_OBJ_FLAG_PRESS_LOCK);
+  lv_obj_set_ext_click_area(water_timer_reset_btn, 14);
+  lv_obj_add_event_cb(water_timer_reset_btn, water_timer_reset_press_lock_cb, LV_EVENT_PRESSED, NULL);
+  lv_obj_add_event_cb(water_timer_reset_btn, water_timer_reset_press_lock_cb, LV_EVENT_PRESS_LOST, NULL);
+  lv_obj_add_event_cb(water_timer_reset_btn, water_timer_reset_press_lock_cb, LV_EVENT_RELEASED, NULL);
+  lv_obj_add_event_cb(water_timer_reset_btn, water_timer_reset_press_lock_cb, LV_EVENT_SHORT_CLICKED, NULL);
+  lv_obj_add_event_cb(water_timer_reset_btn, water_timer_reset_press_lock_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_add_event_cb(water_timer_reset_btn, water_timer_reset_btn_cb, LV_EVENT_SHORT_CLICKED, NULL);
   lv_obj_add_event_cb(water_timer_reset_btn, water_timer_reset_btn_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_add_event_cb(water_timer_reset_btn, water_timer_reset_btn_cb, LV_EVENT_RELEASED, NULL);
   lv_obj_t * resetLabel = lv_label_create(water_timer_reset_btn);
   lv_label_set_text(resetLabel, LV_SYMBOL_REFRESH);
   lv_obj_center(resetLabel);
@@ -2034,13 +2100,11 @@ void update_ui_from_data() {
 
   if(dashboard_temp_bar) {
     float displayLive = useFahrenheit ? liveTemp : ((liveTemp - 32.0f) * 5.0f / 9.0f);
-    float displayLow = useFahrenheit ? tempLow : ((tempLow - 32.0f) * 5.0f / 9.0f);
-    float displayHigh = useFahrenheit ? tempHigh : ((tempHigh - 32.0f) * 5.0f / 9.0f);
-    if(displayHigh <= displayLow) displayHigh = displayLow + 1.0f;
-
-    int minT = (int)floorf(displayLow);
-    int maxT = (int)ceilf(displayHigh);
-    int liveT = (int)lroundf(fminf(fmaxf(displayLive, displayLow), displayHigh));
+    const float displayMin = useFahrenheit ? 30.0f : (30.0f - 32.0f) * 5.0f / 9.0f;
+    const float displayMax = useFahrenheit ? 110.0f : (110.0f - 32.0f) * 5.0f / 9.0f;
+    int minT = (int)lroundf(displayMin);
+    int maxT = (int)lroundf(displayMax);
+    int liveT = (int)lroundf(fminf(fmaxf(displayLive, displayMin), displayMax));
 
     lv_bar_set_range(dashboard_temp_bar, minT, maxT);
     lv_bar_set_value(dashboard_temp_bar, liveT, LV_ANIM_OFF);
@@ -2052,7 +2116,7 @@ void update_ui_from_data() {
   }
 
   if(dashboard_lux_bar) {
-    int maxLux = (int)lroundf(fmaxf(luxThreshold, 1.0f));
+    const int maxLux = 10000;
     int liveLuxClamped = (int)lroundf(fminf(fmaxf(liveLux, 0.0f), (float)maxLux));
 
     lv_bar_set_range(dashboard_lux_bar, 0, maxLux);
@@ -2098,8 +2162,13 @@ void update_ui_from_data() {
   }
 
   if(temp_slider) {
+    int sliderMin = useFahrenheit ? (int)TEMP_CONTROL_MIN_F : (int)floorf((TEMP_CONTROL_MIN_F - 32.0f) * 5.0f / 9.0f);
+    int sliderMax = useFahrenheit ? (int)TEMP_CONTROL_MAX_F : (int)ceilf((TEMP_CONTROL_MAX_F - 32.0f) * 5.0f / 9.0f);
+    lv_slider_set_range(temp_slider, sliderMin, sliderMax);
     float displayLow = useFahrenheit ? tempLow : ((tempLow - 32.0f) * 5.0f / 9.0f);
     float displayHigh = useFahrenheit ? tempHigh : ((tempHigh - 32.0f) * 5.0f / 9.0f);
+    displayLow = fminf(fmaxf(displayLow, (float)sliderMin), (float)sliderMax);
+    displayHigh = fminf(fmaxf(displayHigh, (float)sliderMin), (float)sliderMax);
     lv_slider_set_left_value(temp_slider, displayLow, LV_ANIM_OFF);
     lv_slider_set_value(temp_slider, displayHigh, LV_ANIM_OFF);
     snprintf(buf_txt, sizeof(buf_txt), "Temperature: %.0f - %.0f \xb0%s", displayLow, displayHigh, useFahrenheit ? "F" : "C");
@@ -2118,9 +2187,10 @@ void update_ui_from_data() {
     if(soil_slider_label) lv_label_set_text(soil_slider_label, buf_txt);
   }
   if(lux_slider) {
-    lv_slider_set_value(lux_slider, (int)lroundf(luxThreshold), LV_ANIM_OFF);
+    lv_slider_set_range(lux_slider, 0, (int)LUX_CONTROL_MAX);
+    lv_slider_set_value(lux_slider, (int)lroundf(constrain(luxThreshold, 0.0f, LUX_CONTROL_MAX)), LV_ANIM_OFF);
     if(lux_slider_label) {
-      snprintf(buf_txt, sizeof(buf_txt), "%d lux", (int)lroundf(luxThreshold));
+      snprintf(buf_txt, sizeof(buf_txt), "%d lux", (int)lroundf(constrain(luxThreshold, 0.0f, LUX_CONTROL_MAX)));
       lv_label_set_text(lux_slider_label, buf_txt);
     }
   }
@@ -2216,8 +2286,12 @@ void evaluateControlLogic() {
   if(lastSerialRecv == 0 || millis() - lastSerialRecv > 15000UL) return;
 
   const char *peltierCmd = "CMD:PELTIER_OFF";
-  if(liveTemp > tempHigh) peltierCmd = "CMD:COOL";
-  else if(liveTemp < tempLow) peltierCmd = "CMD:HEAT";
+  if(overridePeltierModeState == 0) {
+    if(liveTemp > tempHigh) peltierCmd = "CMD:COOL";
+    else if(liveTemp < tempLow) peltierCmd = "CMD:HEAT";
+  } else if(overridePeltierModeState == 1) {
+    peltierCmd = manualPeltierCommand.c_str();
+  }
 
   if(lastPeltierCommand != String(peltierCmd)) {
     lastPeltierCommand = String(peltierCmd);
@@ -2225,17 +2299,24 @@ void evaluateControlLogic() {
   }
   Serial2.println(peltierCmd);
 
-  bool turnLightOn = (liveLux < luxThreshold);
-  if(timerEnabled) {
-    int nowMins = (currentHour * 60) + currentMinute;
-    int onMins = (timeOnHour * 60) + timeOnMinute;
-    int offMins = (timeOffHour * 60) + timeOffMinute;
+  bool turnLightOn = false;
+  if(overrideLightModeState == 1) {
+    turnLightOn = true;
+  } else if(overrideLightModeState == 2) {
+    turnLightOn = false;
+  } else {
+    turnLightOn = (liveLux < luxThreshold);
+    if(timerEnabled) {
+      int nowMins = (currentHour * 60) + currentMinute;
+      int onMins = (timeOnHour * 60) + timeOnMinute;
+      int offMins = (timeOffHour * 60) + timeOffMinute;
 
-    bool insideSchedule = false;
-    if(onMins < offMins) insideSchedule = (nowMins >= onMins && nowMins < offMins);
-    else insideSchedule = (nowMins >= onMins || nowMins < offMins);
+      bool insideSchedule = false;
+      if(onMins < offMins) insideSchedule = (nowMins >= onMins && nowMins < offMins);
+      else insideSchedule = (nowMins >= onMins || nowMins < offMins);
 
-    if(!insideSchedule) turnLightOn = false;
+      if(!insideSchedule) turnLightOn = false;
+    }
   }
 
   int pwmVal = turnLightOn ? map(globalBrightness, 1, 10, 25, 255) : 0;
@@ -2380,6 +2461,11 @@ void setup() {
   if(temp_slider) lv_obj_add_event_cb(temp_slider, temp_range_slider_cb, LV_EVENT_ALL, NULL);
   if(hum_slider) lv_obj_add_event_cb(hum_slider, hum_range_slider_cb, LV_EVENT_ALL, NULL);
   if(soil_slider) lv_obj_add_event_cb(soil_slider, soil_range_slider_cb, LV_EVENT_ALL, NULL);
+  if(temp_slider) {
+    int sliderMin = useFahrenheit ? (int)TEMP_CONTROL_MIN_F : (int)floorf((TEMP_CONTROL_MIN_F - 32.0f) * 5.0f / 9.0f);
+    int sliderMax = useFahrenheit ? (int)TEMP_CONTROL_MAX_F : (int)ceilf((TEMP_CONTROL_MAX_F - 32.0f) * 5.0f / 9.0f);
+    lv_slider_set_range(temp_slider, sliderMin, sliderMax);
+  }
   if(temp_slider) lv_obj_add_flag(temp_slider, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
   if(hum_slider) lv_obj_add_flag(hum_slider, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
   if(soil_slider) lv_obj_add_flag(soil_slider, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
@@ -2393,7 +2479,7 @@ void setup() {
   if(hum_slider_label) lv_obj_add_flag(hum_slider_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
   if(soil_slider_label) lv_obj_add_flag(soil_slider_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
   if(lux_slider) {
-    lv_slider_set_range(lux_slider, 0, 40000);
+    lv_slider_set_range(lux_slider, 0, (int)LUX_CONTROL_MAX);
     lv_obj_add_flag(lux_slider, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
     lv_obj_add_flag(lux_slider, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(lux_slider, lux_slider_cb, LV_EVENT_ALL, NULL);
@@ -2448,7 +2534,7 @@ void setup() {
     lv_obj_set_align(override_peltier_auto_btn, LV_ALIGN_CENTER);
     lv_obj_add_event_cb(override_peltier_auto_btn, override_peltier_auto_btn_cb, LV_EVENT_CLICKED, NULL);
     override_peltier_auto_label = lv_label_create(override_peltier_auto_btn);
-    lv_label_set_text(override_peltier_auto_label, "Peltier Auto");
+    lv_label_set_text(override_peltier_auto_label, "Peltier: AUTO");
     lv_obj_set_style_text_color(override_peltier_auto_label, lv_color_black(), 0);
     lv_obj_center(override_peltier_auto_label);
   }
