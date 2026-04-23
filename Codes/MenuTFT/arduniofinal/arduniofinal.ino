@@ -20,6 +20,9 @@ const uint8_t TOP_FAN_PIN = 6;
 const uint8_t BOTTOM_FAN_PIN = 5;
 const uint8_t MIST_PIN = 4;
 const uint8_t WATER_PUMP_PIN = 12;
+// KB2040 I2C Peripheral Address
+#define KB2040_I2C_ADDR 0x08
+
 
 // Soil moisture is not wired yet. Keep pin placeholder for later.
 const int SOIL_PIN = A0;
@@ -47,8 +50,8 @@ int lightPwm = 0;
 int lightLevel = 3;
 bool bottomFanOn = false;
 
-const unsigned long PELTIER_PULSE_MS = 10000UL;
-const unsigned long PELTIER_SWITCH_GUARD_MS = 5000UL;
+const unsigned long PELTIER_PULSE_MS = 20000UL; // <-- CHANGED to 20 seconds
+const unsigned long PELTIER_SWITCH_GUARD_MS = 5000UL; // Still enforces a 5s safety cooldown between hot/cold
 bool pendingPeltierChange = false;
 PeltierMode pendingPeltierMode = PELTIER_OFF;
 unsigned long pendingPeltierPulseMs = 0;
@@ -74,6 +77,7 @@ static void applyLightPwm(int pwm) {
 
 static void setMist(bool enable) {
   mistOn = enable;
+  // Mist is physically wired to the Arduino, so we use digitalWrite
   digitalWrite(MIST_PIN, mistOn ? HIGH : LOW);
 }
 
@@ -157,13 +161,16 @@ static void requestPeltierPulse(PeltierMode mode, unsigned long pulseMs) {
 }
 
 static void startWaterPumpPulse(unsigned long durationMs) {
-  digitalWrite(WATER_PUMP_PIN, HIGH);
-  waterPumpUntilMs = millis() + durationMs;
+  // The KB2040 code automatically handles the 5-second pulse, 
+  // so we just need to send Command 1 (Trigger Pump)
+  Wire1.beginTransmission(KB2040_I2C_ADDR);
+  Wire1.write(1); 
+  Wire1.endTransmission();
 }
-
 static void stopWaterPump() {
-  digitalWrite(WATER_PUMP_PIN, LOW);
-  waterPumpUntilMs = 0;
+  // The KB2040 handles its own shutoff timer, but we will leave this 
+  // function here so your processCommand logic doesn't break.
+  Serial.println("Pump stop requested (Handled automatically by KB2040)");
 }
 
 static void initSensors() {
@@ -198,14 +205,30 @@ static void readSensors(float lux) {
 
   currentLux = lux;
 
-  // Moisture not wired yet. If probe is connected later, convert raw to %.
-  int raw = analogRead(SOIL_PIN);
-  if(raw > 10) {
-    currentSoil = map(raw, 0, 1023, 100, 0);
-    if(currentSoil < 0.0f) currentSoil = 0.0f;
-    if(currentSoil > 100.0f) currentSoil = 100.0f;
+  // Request 2 bytes of moisture data from the KB2040
+  Wire1.requestFrom((uint8_t)KB2040_I2C_ADDR, (uint8_t)2);
+  if (Wire1.available() == 2) {
+    byte msb = Wire1.read();
+    byte lsb = Wire1.read();
+    int rawSoil = (msb << 8) | lsb;
+
+    // The KB2040 returns 1500 when simulating a dry override
+    if(rawSoil == 1500) {
+      currentSoil = 0.0f; // 1500 means artificially bone dry (0% moisture)
+    } else if(rawSoil > 10) { // > 10 just ensures the sensor isn't totally disconnected/shorted
+      
+      // Map the calibrated values to a percentage (1020=Dry/0%, 600=Wet/100%)
+      currentSoil = map(rawSoil, 1020, 600, 0, 100);
+      
+      // Constrain the result so it stays cleanly within 0.0% and 100.0%
+      if(currentSoil < 0.0f) currentSoil = 0.0f;
+      if(currentSoil > 100.0f) currentSoil = 100.0f;
+      
+    } else {
+      currentSoil = 0.0f;
+    }
   } else {
-    currentSoil = -1.0f;
+    currentSoil = -1.0f; // -1 means "Not wired / I2C Error"
   }
 }
 
@@ -218,11 +241,13 @@ static void sendTelemetry() {
   lastTelemetryMs = now;
   readSensors(lux);
 
-  // Keep the UART telemetry payload exactly in the legacy format used by ESP parsing.
+  // Add Soil Moisture (M) to the legacy format used by ESP parsing.
   String packet =
     "T:" + String(currentTempF, 1) +
     ",H:" + String(currentHumidity, 0) +
-    ",L:" + String(currentLux, 1);
+    ",L:" + String(currentLux, 1) +
+    ",M:" + String(currentSoil, 0);
+    
   COMM_SERIAL.println(packet);
   Serial.println("UART Packet: " + packet);
 }
@@ -404,10 +429,7 @@ static void serviceActuators() {
       }
     }
   }
-
-  if(waterPumpUntilMs > 0 && now >= waterPumpUntilMs) {
-    stopWaterPump();
-  }
+  // waterPumpUntilMs logic removed! Handled by KB2040.
 }
 
 void setup() {
@@ -421,19 +443,19 @@ void setup() {
   pinMode(LIGHT_PWM_PIN, OUTPUT);
   pinMode(TOP_FAN_PIN, OUTPUT);
   pinMode(BOTTOM_FAN_PIN, OUTPUT);
-  pinMode(MIST_PIN, OUTPUT);
-  pinMode(WATER_PUMP_PIN, OUTPUT);
+  pinMode(MIST_PIN, OUTPUT); // <-- ADDED THIS BACK IN!
+
+  // Initialize sensors and Wire1 FIRST
+  initSensors(); 
 
   applyLightPwm(0);
   setFan(false);
   setBottomFan(false);
   setMist(false);
-  stopWaterPump();
   setPeltierMode(PELTIER_OFF);
-  initSensors();
-
+  
   Serial.println("System Online.");
-  Serial.println("arduniofinal telemetry format: T/H/L");
+  Serial.println("arduniofinal telemetry format: T/H/L/M");
   Serial.println("Type 'help' for commands.");
 }
 
