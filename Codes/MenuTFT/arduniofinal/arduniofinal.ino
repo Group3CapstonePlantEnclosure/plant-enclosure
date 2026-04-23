@@ -10,13 +10,14 @@
 #define COMM_SERIAL Serial1
 
 // ------------------- HARDWARE PINS -------------------
-#define LIGHT_PWM_PIN 9
+#define LIGHT_PWM_PIN 7
 const uint8_t R_EN = 8;
-const uint8_t L_EN = 7;
+const uint8_t L_EN = 9;
 const uint8_t RPWM = 10;
 const uint8_t LPWM = 11;
-const uint8_t TOP_FAN_PIN = 5;
-const uint8_t BOTTOM_FAN_PIN = 6;
+// Physical fan wiring is swapped relative to original labels, so map pins accordingly.
+const uint8_t TOP_FAN_PIN = 6;
+const uint8_t BOTTOM_FAN_PIN = 5;
 const uint8_t MIST_PIN = 4;
 const uint8_t WATER_PUMP_PIN = 12;
 
@@ -46,7 +47,12 @@ int lightPwm = 0;
 int lightLevel = 3;
 bool bottomFanOn = false;
 
-const unsigned long THERMAL_SWITCH_PAUSE_MS = 5000UL;
+const unsigned long PELTIER_PULSE_MS = 10000UL;
+const unsigned long PELTIER_SWITCH_GUARD_MS = 5000UL;
+bool pendingPeltierChange = false;
+PeltierMode pendingPeltierMode = PELTIER_OFF;
+unsigned long pendingPeltierPulseMs = 0;
+unsigned long pendingPeltierApplyMs = 0;
 
 // ------------------- SENSOR TELEMETRY -------------------
 float currentTempF = 0.0f;
@@ -81,36 +87,73 @@ static void setBottomFan(bool enable) {
   analogWrite(BOTTOM_FAN_PIN, bottomFanOn ? 255 : 0);
 }
 
+static void setBottomFanPwm(int pwm) {
+  int out = constrain(pwm, 0, 255);
+  bottomFanOn = (out > 0);
+  analogWrite(BOTTOM_FAN_PIN, out);
+}
+
 static int pwmForLevel(int lvl) {
   if(lvl <= 1) return 80;
   if(lvl == 2) return 160;
   return 255;
 }
 
-static void applyThermalSwitchPause() {
-  motorController.Stop();
-  setBottomFan(false);
-  delay(THERMAL_SWITCH_PAUSE_MS);
-}
-
 static void setPeltierMode(PeltierMode mode) {
   if(currentMode == mode) return;
-
-  if((currentMode == PELTIER_HEAT && mode == PELTIER_COOL) ||
-     (currentMode == PELTIER_COOL && mode == PELTIER_HEAT)) {
-    applyThermalSwitchPause();
-  }
 
   currentMode = mode;
   if(currentMode == PELTIER_OFF) {
     motorController.Stop();
-    setBottomFan(false);
+    setFan(false);
+    setBottomFanPwm(0);
     return;
   }
 
-  // Peltier drive uses the bottom fan.
-  setBottomFan(true);
+  // Run both fans while peltier is active.
+  setFan(true);
+  if(currentMode == PELTIER_HEAT) setBottomFanPwm(153); // ~60%
+  else setBottomFanPwm(255);
   peltierPwmTimer = 0;
+}
+
+static void applyPeltierCommand(PeltierMode mode, unsigned long pulseMs) {
+  pendingPeltierChange = false;
+
+  if(mode == PELTIER_OFF) {
+    peltierPulseUntilMs = 0;
+    setPeltierMode(PELTIER_OFF);
+    return;
+  }
+
+  setPeltierMode(mode);
+  peltierPulseUntilMs = millis() + pulseMs;
+}
+
+static void requestPeltierPulse(PeltierMode mode, unsigned long pulseMs) {
+  if(mode != PELTIER_HEAT && mode != PELTIER_COOL) {
+    applyPeltierCommand(mode, pulseMs);
+    return;
+  }
+
+  unsigned long now = millis();
+  bool reverseFromActive =
+    (currentMode == PELTIER_HEAT && mode == PELTIER_COOL) ||
+    (currentMode == PELTIER_COOL && mode == PELTIER_HEAT);
+
+  if(reverseFromActive || pendingPeltierChange) {
+    // Always force a 5-second OFF gap before switching heat <-> cool.
+    setPeltierMode(PELTIER_OFF);
+    peltierPulseUntilMs = 0;
+    pendingPeltierChange = true;
+    pendingPeltierMode = mode;
+    pendingPeltierPulseMs = pulseMs;
+    pendingPeltierApplyMs = now + PELTIER_SWITCH_GUARD_MS;
+    Serial.println("Peltier switch delayed for thermal protection");
+    return;
+  }
+
+  applyPeltierCommand(mode, pulseMs);
 }
 
 static void startWaterPumpPulse(unsigned long durationMs) {
@@ -191,34 +234,28 @@ static void processCommand(const String &input) {
 
   // Peltier absolute overrides.
   if(cmd == "CMD:HEAT") {
-    peltierPulseUntilMs = 0;
-    setPeltierMode(PELTIER_HEAT);
+    requestPeltierPulse(PELTIER_HEAT, PELTIER_PULSE_MS);
     return;
   }
   if(cmd == "CMD:COOL") {
-    peltierPulseUntilMs = 0;
-    setPeltierMode(PELTIER_COOL);
+    requestPeltierPulse(PELTIER_COOL, PELTIER_PULSE_MS);
     return;
   }
   if(cmd == "CMD:PELTIER_OFF") {
-    peltierPulseUntilMs = 0;
-    setPeltierMode(PELTIER_OFF);
+    applyPeltierCommand(PELTIER_OFF, 0);
     return;
   }
   if(cmd.equalsIgnoreCase("peltier auto")) {
     // ESP owns control logic; AUTO means stop manual forcing here.
-    peltierPulseUntilMs = 0;
-    setPeltierMode(PELTIER_OFF);
+    applyPeltierCommand(PELTIER_OFF, 0);
     return;
   }
   if(cmd == "CMD:HEAT_10S") {
-    setPeltierMode(PELTIER_HEAT);
-    peltierPulseUntilMs = millis() + 10000UL;
+    requestPeltierPulse(PELTIER_HEAT, PELTIER_PULSE_MS);
     return;
   }
   if(cmd == "CMD:COOL_10S") {
-    setPeltierMode(PELTIER_COOL);
-    peltierPulseUntilMs = millis() + 10000UL;
+    requestPeltierPulse(PELTIER_COOL, PELTIER_PULSE_MS);
     return;
   }
 
@@ -247,17 +284,17 @@ static void processCommand(const String &input) {
   }
   if(cmd.equalsIgnoreCase("lvl 1")) {
     lightLevel = 1;
-    if(lightOn) applyLightPwm(pwmForLevel(lightLevel));
+    applyLightPwm(pwmForLevel(lightLevel));
     return;
   }
   if(cmd.equalsIgnoreCase("lvl 2")) {
     lightLevel = 2;
-    if(lightOn) applyLightPwm(pwmForLevel(lightLevel));
+    applyLightPwm(pwmForLevel(lightLevel));
     return;
   }
   if(cmd.equalsIgnoreCase("lvl 3")) {
     lightLevel = 3;
-    if(lightOn) applyLightPwm(pwmForLevel(lightLevel));
+    applyLightPwm(pwmForLevel(lightLevel));
     return;
   }
 
@@ -346,18 +383,22 @@ static void processCommand(const String &input) {
 static void serviceActuators() {
   unsigned long now = millis();
 
+  if(pendingPeltierChange && now >= pendingPeltierApplyMs) {
+    applyPeltierCommand(pendingPeltierMode, pendingPeltierPulseMs);
+  }
+
   if(currentMode == PELTIER_HEAT || currentMode == PELTIER_COOL) {
     if(peltierPulseUntilMs > 0 && now >= peltierPulseUntilMs) {
-      peltierPulseUntilMs = 0;
-      setPeltierMode(PELTIER_OFF);
+      applyPeltierCommand(PELTIER_OFF, 0);
     }
 
     if(currentMode != PELTIER_OFF) {
       if(peltierPwmTimer >= PWM_PERIOD_MS) peltierPwmTimer = 0;
 
       if(peltierPwmTimer < PWM_ON_MS) {
-        if(currentMode == PELTIER_HEAT) motorController.TurnRight(255);
-        else motorController.TurnLeft(255);
+        // Wiring orientation requires this mapping: HEAT=TurnLeft, COOL=TurnRight.
+        if(currentMode == PELTIER_HEAT) motorController.TurnLeft(255);
+        else motorController.TurnRight(255);
       } else {
         motorController.Stop();
       }

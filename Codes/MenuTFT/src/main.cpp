@@ -62,6 +62,7 @@ lv_obj_t * wifi_pwd_eye_label = NULL;
 lv_obj_t * wifi_connect_btn = NULL;
 bool wifi_keyboard_hidden = false;
 Preferences wifiPrefs;
+static bool wifiScanPendingResults = false;
 
 static lv_obj_t * network_settings_page = NULL;
 static lv_obj_t * network_connect_btn = NULL;
@@ -81,6 +82,8 @@ static lv_obj_t * dashboard_lux_value_label = NULL;
 static lv_obj_t * dashboard_schedule_label = NULL;
 static lv_obj_t * dashboard_schedule_state_label = NULL;
 static lv_obj_t * dashboard_light_status_icon = NULL;
+static lv_obj_t * dashboard_light_timer_bar = NULL;
+static lv_obj_t * dashboard_light_timer_text = NULL;
 static lv_obj_t * dashboard_water_card = NULL;
 static lv_obj_t * dashboard_water_title_label = NULL;
 static lv_obj_t * dashboard_water_label = NULL;
@@ -111,6 +114,7 @@ static lv_obj_t * test_bottom_fan_btn = NULL;
 static lv_obj_t * test_bottom_fan_label = NULL;
 static lv_obj_t * test_close_btn = NULL;
 static lv_obj_t * test_status_label = NULL;
+static lv_obj_t * status_clock_label = NULL;
 static int overrideLightModeState = 0;
 static int overrideMistModeState = 0;
 static int overridePeltierModeState = 0;
@@ -160,6 +164,7 @@ static void update_network_status_label();
 static void create_network_settings_page();
 static void configure_dashboard_widgets();
 static void fix_network_settings_layout();
+static void poll_wifi_scan_results();
 static void show_network_settings_page();
 static void open_menu_root();
 static bool wifi_overlay_active();
@@ -168,6 +173,7 @@ static void ensure_lighting_timer_controls();
 static void ensure_watering_timer_controls();
 static void schedule_next_watering(bool resetFromNow);
 static void update_watering_timer_label();
+static void update_dashboard_light_timer_progress();
 static void send_watering_command();
 static void send_override_command(const char *cmd, const char *logMsg);
 static void env_page_open_cb(lv_event_t * e);
@@ -180,6 +186,7 @@ static void test_bottom_fan_btn_cb(lv_event_t * e);
 static void test_peltier_heat_btn_cb(lv_event_t * e);
 static void test_peltier_cool_btn_cb(lv_event_t * e);
 static void test_set_status(const char *text);
+static void update_status_clock_label();
 
 // --- PIN DEFINITIONS ---
 #define TOUCH_IRQ  16  
@@ -334,7 +341,68 @@ static void update_timer_labels() {
     lv_img_set_src(dashboard_light_status_icon, (lastLightPwm > 0) ? &ui_img_sun_white_short_rays_32x32_png : &ui_img_sun_white_1_png);
   }
 
+  update_dashboard_light_timer_progress();
+
   update_watering_timer_label();
+}
+
+static void update_dashboard_light_timer_progress() {
+  if(dashboard_light_timer_bar == NULL || dashboard_light_timer_text == NULL) return;
+
+  if(!timerEnabled) {
+    lv_bar_set_value(dashboard_light_timer_bar, 0, LV_ANIM_OFF);
+    lv_label_set_text(dashboard_light_timer_text, "Timer Off");
+    return;
+  }
+
+  int nowMins = (currentHour * 60) + currentMinute;
+  int onMins = (timeOnHour * 60) + timeOnMinute;
+  int offMins = (timeOffHour * 60) + timeOffMinute;
+
+  bool insideSchedule = false;
+  if(onMins < offMins) insideSchedule = (nowMins >= onMins && nowMins < offMins);
+  else insideSchedule = (nowMins >= onMins || nowMins < offMins);
+
+  int durationMins = offMins - onMins;
+  if(durationMins <= 0) durationMins += 1440;
+
+  if(insideSchedule) {
+    int elapsedMins = nowMins - onMins;
+    if(elapsedMins < 0) elapsedMins += 1440;
+    int remainingMins = durationMins - elapsedMins;
+    if(remainingMins < 0) remainingMins = 0;
+
+    int pct = (durationMins > 0) ? (int)lroundf((elapsedMins * 100.0f) / (float)durationMins) : 0;
+    if(pct < 0) pct = 0;
+    if(pct > 100) pct = 100;
+    lv_bar_set_value(dashboard_light_timer_bar, pct, LV_ANIM_OFF);
+
+    int hrs = remainingMins / 60;
+    int mins = remainingMins % 60;
+    lv_obj_set_style_bg_color(dashboard_light_timer_bar, lv_color_hex(0xFFD54F), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(dashboard_light_timer_bar, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_label_set_text_fmt(dashboard_light_timer_text, "%02d:%02d remaining", hrs, mins);
+  } else {
+    int minsUntilOn = onMins - nowMins;
+    if(minsUntilOn < 0) minsUntilOn += 1440;
+    int offDurationMins = 1440 - durationMins;
+    if(offDurationMins <= 0) offDurationMins = 1;
+
+    int elapsedOffMins = nowMins - offMins;
+    if(elapsedOffMins < 0) elapsedOffMins += 1440;
+
+    int pct = (int)lroundf((elapsedOffMins * 100.0f) / (float)offDurationMins);
+    if(pct < 0) pct = 0;
+    if(pct > 100) pct = 100;
+
+    int hrs = minsUntilOn / 60;
+    int mins = minsUntilOn % 60;
+
+    lv_bar_set_value(dashboard_light_timer_bar, pct, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(dashboard_light_timer_bar, lv_color_hex(0xFFB300), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(dashboard_light_timer_bar, LV_OPA_40, LV_PART_INDICATOR);
+    lv_label_set_text_fmt(dashboard_light_timer_text, "%02d:%02d until ON", hrs, mins);
+  }
 }
 
 static bool wifi_overlay_active() {
@@ -1744,6 +1812,30 @@ static void configure_dashboard_widgets() {
   if(lv_obj_get_parent(dashboard_light_status_icon) != dashboard_lux_card) lv_obj_set_parent(dashboard_light_status_icon, dashboard_lux_card);
   lv_obj_align(dashboard_light_status_icon, LV_ALIGN_TOP_MID, 0, 108);
 
+  if(dashboard_light_timer_bar == NULL) {
+    dashboard_light_timer_bar = lv_bar_create(dashboard_lux_card);
+    lv_obj_set_size(dashboard_light_timer_bar, 320, 18);
+    lv_bar_set_range(dashboard_light_timer_bar, 0, 100);
+    lv_bar_set_value(dashboard_light_timer_bar, 0, LV_ANIM_OFF);
+    lv_obj_set_style_radius(dashboard_light_timer_bar, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(dashboard_light_timer_bar, LV_OPA_40, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(dashboard_light_timer_bar, lv_palette_lighten(LV_PALETTE_GREY, 3), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(dashboard_light_timer_bar, lv_color_hex(0xFFD54F), LV_PART_INDICATOR);
+  }
+  if(lv_obj_get_parent(dashboard_light_timer_bar) != dashboard_lux_card) lv_obj_set_parent(dashboard_light_timer_bar, dashboard_lux_card);
+  lv_obj_align(dashboard_light_timer_bar, LV_ALIGN_TOP_MID, 0, 136);
+
+  if(dashboard_light_timer_text == NULL) {
+    dashboard_light_timer_text = lv_label_create(dashboard_lux_card);
+    lv_obj_set_width(dashboard_light_timer_text, 304);
+    lv_label_set_long_mode(dashboard_light_timer_text, LV_LABEL_LONG_CLIP);
+    lv_obj_set_style_text_align(dashboard_light_timer_text, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(dashboard_light_timer_text, lv_color_black(), 0);
+    lv_label_set_text(dashboard_light_timer_text, "Timer Off");
+  }
+  if(lv_obj_get_parent(dashboard_light_timer_text) != dashboard_lux_card) lv_obj_set_parent(dashboard_light_timer_text, dashboard_lux_card);
+  lv_obj_align_to(dashboard_light_timer_text, dashboard_light_timer_bar, LV_ALIGN_CENTER, 0, 0);
+
   if(dashboard_water_label == NULL) {
     dashboard_water_label = lv_label_create(ui_Dashboard);
     lv_obj_set_width(dashboard_water_label, 380);
@@ -2006,14 +2098,12 @@ void build_wifi_scanner_ui() {
     wifi_list = NULL;
   }
   if(tabview != NULL) lv_obj_add_flag(tabview, LV_OBJ_FLAG_HIDDEN);
-  if(CloudTaskHandle != NULL) vTaskSuspend(CloudTaskHandle);
 
   isScanning = true;
+  wifiScanPendingResults = true;
   sysLog("Scanning WiFi networks...");
-  int n = WiFi.scanNetworks(false, false);
-  isScanning = false;
-
-  if(CloudTaskHandle != NULL) vTaskResume(CloudTaskHandle);
+  WiFi.scanDelete();
+  WiFi.scanNetworks(true, false);
 
   wifi_list = lv_list_create(lv_scr_act());
   fix_wifi_list_layout();
@@ -2025,6 +2115,26 @@ void build_wifi_scanner_ui() {
   }, LV_EVENT_CLICKED, NULL);
 
   lv_list_add_text(wifi_list, "Available Networks");
+  lv_list_add_btn(wifi_list, LV_SYMBOL_REFRESH, "Scanning...");
+}
+
+static void poll_wifi_scan_results() {
+  if(!wifiScanPendingResults || wifi_list == NULL) return;
+
+  int n = WiFi.scanComplete();
+  if(n == WIFI_SCAN_RUNNING) return;
+
+  // Rebuild list content once scan is complete.
+  lv_obj_clean(wifi_list);
+
+  lv_obj_t * back_btn = lv_list_add_btn(wifi_list, LV_SYMBOL_LEFT, "Back to Settings");
+  lv_obj_add_event_cb(back_btn, [](lv_event_t * e){
+    LV_UNUSED(e);
+    show_network_settings_page();
+  }, LV_EVENT_CLICKED, NULL);
+
+  lv_list_add_text(wifi_list, "Available Networks");
+
   if(n <= 0) {
     lv_list_add_btn(wifi_list, LV_SYMBOL_REFRESH, "No visible networks found.");
   } else {
@@ -2038,6 +2148,8 @@ void build_wifi_scanner_ui() {
   }
 
   WiFi.scanDelete();
+  isScanning = false;
+  wifiScanPendingResults = false;
 }
 
 void build_time_picker_modal() {
@@ -2376,6 +2488,13 @@ static bool parseTaggedFloat(const String &data, const char *tag, float &outValu
   return true;
 }
 
+static void update_status_clock_label() {
+  if(status_clock_label == NULL) return;
+  int hour12 = currentHour % 12;
+  if(hour12 == 0) hour12 = 12;
+  lv_label_set_text_fmt(status_clock_label, "%d:%02d %s", hour12, currentMinute, currentHour >= 12 ? "PM" : "AM");
+}
+
 static void processSensorPacket(const String &packet) {
   String data = packet;
   data.trim();
@@ -2431,17 +2550,23 @@ void updateClock() {
     if(getLocalTime(&timeinfo, 10)) {
       currentHour = timeinfo.tm_hour;
       currentMinute = timeinfo.tm_min;
+      update_status_clock_label();
       return;
     }
   }
 
-  if(firstTick) return;
+  if(firstTick) {
+    update_status_clock_label();
+    return;
+  }
 
   currentMinute++;
   if(currentMinute > 59) {
     currentMinute = 0;
     currentHour = (currentHour + 1) % 24;
   }
+
+  update_status_clock_label();
 }
 
 static void schedule_next_watering(bool resetFromNow) {
@@ -2526,7 +2651,6 @@ void evaluateControlLogic() {
   } else if(overrideLightModeState == 2) {
     turnLightOn = false;
   } else {
-    turnLightOn = (liveLux < luxThreshold);
     if(timerEnabled) {
       int nowMins = (currentHour * 60) + currentMinute;
       int onMins = (timeOnHour * 60) + timeOnMinute;
@@ -2536,7 +2660,10 @@ void evaluateControlLogic() {
       if(onMins < offMins) insideSchedule = (nowMins >= onMins && nowMins < offMins);
       else insideSchedule = (nowMins >= onMins || nowMins < offMins);
 
-      if(!insideSchedule) turnLightOn = false;
+      // Timer schedule is authoritative when enabled.
+      turnLightOn = insideSchedule;
+    } else {
+      turnLightOn = (liveLux < luxThreshold);
     }
   }
 
@@ -2631,6 +2758,7 @@ void checkSerialSensors() {
 void uiLoopTask(void * parameter) {
   for(;;) {
     lv_timer_handler();
+    poll_wifi_scan_results();
     if(uiNeedsUpdate) update_ui_from_data();
 
     if(override_notice_label && !(lv_obj_has_flag(override_notice_label, LV_OBJ_FLAG_HIDDEN)) && millis() > overrideNoticeUntilMs) {
@@ -2797,6 +2925,16 @@ void setup() {
   }
   if(ui_net) {
     lv_obj_set_style_text_color(ui_net, lv_color_black(), 0);
+  }
+
+  if(ui_status_bar != NULL && status_clock_label == NULL) {
+    status_clock_label = lv_label_create(ui_status_bar);
+    lv_obj_set_width(status_clock_label, LV_SIZE_CONTENT);
+    lv_obj_set_height(status_clock_label, LV_SIZE_CONTENT);
+    lv_obj_set_style_text_color(status_clock_label, lv_color_white(), 0);
+    if(ui_wifistatuslabel != NULL) lv_obj_align_to(status_clock_label, ui_wifistatuslabel, LV_ALIGN_OUT_LEFT_MID, 22, 0);
+    else lv_obj_align(status_clock_label, LV_ALIGN_RIGHT_MID, 2, 0);
+    update_status_clock_label();
   }
 
   if(menu_test_btn == NULL) {
