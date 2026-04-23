@@ -200,10 +200,21 @@ void printStatus() {
 void processCommand(String cmd) {
   if (cmd.length() == 0) return;
 
-  // --- ESP32 Specific Formats ---
+  // --- Peltier ESP32 Commands ---
   if (cmd == "CMD:COOL") { autoPeltierMode = false; setPeltierMode(COOLING); return; } 
   if (cmd == "CMD:HEAT") { autoPeltierMode = false; setPeltierMode(HEATING); return; } 
   if (cmd == "CMD:PELTIER_OFF") { autoPeltierMode = false; setPeltierMode(OFF); return; } 
+  if (cmd.equalsIgnoreCase("peltier auto")) {
+    autoPeltierMode = true;
+    Serial.println("Peltier Auto Temp Control ENABLED");
+    return;
+  }
+  // General Peltier Overrides
+  if (cmd == "H" || cmd == "h") { autoPeltierMode = false; setPeltierMode(HEATING); return; }
+  if (cmd == "C" || cmd == "c") { autoPeltierMode = false; setPeltierMode(COOLING); return; }
+  if (cmd == "O" || cmd == "o") { autoPeltierMode = false; setPeltierMode(OFF); return; }
+
+  // --- Light ESP32 Commands ---
   if (cmd.startsWith("CMD:LIGHT,")) {
     autoMode = false;
     int pwmValue = cmd.substring(10).toInt();
@@ -211,19 +222,37 @@ void processCommand(String cmd) {
     ledOn = (pwmValue > 0);
     return;
   }
-
-  // --- General Overrides ---
-  if (cmd == "H" || cmd == "h") { autoPeltierMode = false; setPeltierMode(HEATING); return; }
-  if (cmd == "C" || cmd == "c") { autoPeltierMode = false; setPeltierMode(COOLING); return; }
-  if (cmd == "O" || cmd == "o") { autoPeltierMode = false; setPeltierMode(OFF); return; }
-
-  if (cmd.equalsIgnoreCase("peltier auto")) {
-    autoPeltierMode = true;
-    Serial.println("Peltier Auto Temp Control ENABLED");
-    return;
+  if (cmd.equalsIgnoreCase("light on") || cmd == "on") { 
+    autoMode = false; turnOn(); Serial.println("Manual light mode ON"); return; 
+  }
+  if (cmd.equalsIgnoreCase("light off") || cmd == "off") { 
+    autoMode = false; turnOff(); Serial.println("Manual light mode OFF"); return; 
+  }
+  if (cmd.equalsIgnoreCase("light auto") || cmd == "auto") { 
+    autoMode = true; Serial.println("Light Mode set to AUTO"); return; 
   }
 
-  if (cmd.equalsIgnoreCase("mist")) {
+  // --- Mist / Humidity ESP32 Commands ---
+  if (cmd.equalsIgnoreCase("mist on")) {
+    autoHumidityMode = false;
+    mistIsOn = true;
+    digitalWrite(mistPin, HIGH);
+    Serial.println("Mister ON (Continuous)");
+    return;
+  }
+  if (cmd.equalsIgnoreCase("mist off")) {
+    autoHumidityMode = false;
+    mistIsOn = false;
+    digitalWrite(mistPin, LOW);
+    Serial.println("Mister OFF");
+    return;
+  }
+  if (cmd.equalsIgnoreCase("mist auto") || cmd.equalsIgnoreCase("humid auto")) {
+    autoHumidityMode = true;
+    Serial.println("Humidity Auto Control ENABLED");
+    return;
+  }
+  if (cmd.equalsIgnoreCase("mist")) { // Fallback for a manual pulse toggle
     autoHumidityMode = false;
     mistIsOn = !mistIsOn;
     digitalWrite(mistPin, mistIsOn ? HIGH : LOW);
@@ -232,27 +261,21 @@ void processCommand(String cmd) {
     return;
   }
 
+  // --- Fan Commands ---
   if (cmd.equalsIgnoreCase("fan")) {
     autoHumidityMode = false;
     manualTopFanOn = !manualTopFanOn;
-    
     if (manualTopFanOn) {
       analogWrite(TOP_FAN_PIN, 255);
     } else if (currentMode == OFF && !fanOverrideActive) {
       analogWrite(TOP_FAN_PIN, 0); 
     }
-    
     Serial.print("Top Fan Status: ");
     Serial.println(manualTopFanOn ? "ON (Auto Humidity Disabled)" : "OFF (Auto Humidity Disabled)");
     return;
   }
 
-  if (cmd.equalsIgnoreCase("humid auto")) {
-    autoHumidityMode = true;
-    Serial.println("Humidity Auto Control ENABLED");
-    return;
-  }
-
+  // --- Sensor & System Commands ---
   if (cmd == "show") { printStatus(); return; }
   if (cmd == "CLEAN") { startCleaningCycle(); return; }
   if (cmd == "lux") {
@@ -262,30 +285,24 @@ void processCommand(String cmd) {
     return;
   }
 
-  if (cmd == "auto") { autoMode = true; Serial.println("Light Mode set to AUTO"); return; }
-  if (cmd == "on") { autoMode = false; turnOn(); Serial.println("Manual light mode enabled"); return; }
-  if (cmd == "off") { autoMode = false; turnOff(); Serial.println("Manual light mode enabled"); return; }
-
   if (cmd == "help") {
     Serial.println("Commands:");
     Serial.println("  low <lux>    -> AUTO: turn ON below this");
     Serial.println("  high <lux>   -> AUTO: turn OFF above this");
     Serial.println("  lvl <1|2|3>  -> set brightness level");
-    Serial.println("  auto         -> sensor controls light");
-    Serial.println("  on           -> manual ON");
-    Serial.println("  off          -> manual OFF");
-    Serial.println("  lux          -> print current lux");
+    Serial.println("  light auto   -> sensor controls light");
+    Serial.println("  light on     -> manual ON");
+    Serial.println("  light off    -> manual OFF");
     Serial.println("  show         -> show settings");
     Serial.println("  CLEAN        -> trigger SHT4x heater cycle");
     Serial.println("  H/C/O        -> Manual Peltier override (Disables Auto Temp)");
     Serial.println("  peltier auto -> Re-enable Auto Temp Control");
-    Serial.println("  mist         -> Toggle Humidifier ON/OFF (Disables Auto Humidity)");
-    Serial.println("  fan          -> Toggle Top Fan ON/OFF (Disables Auto Humidity)");
-    Serial.println("  humid auto   -> Re-enable Auto Humidity Control");
+    Serial.println("  mist on/off  -> Toggle Humidifier (Disables Auto Humidity)");
+    Serial.println("  mist auto    -> Re-enable Auto Humidity");
     return;
   }
 
-  // --- Parameter Adjustments ---
+  // --- Parameter Adjustments (lvl, low, high) ---
   int sp = cmd.indexOf(' ');
   String key = (sp == -1) ? cmd : cmd.substring(0, sp);
   String val = (sp == -1) ? "" : cmd.substring(sp + 1);
@@ -302,12 +319,12 @@ void processCommand(String cmd) {
     if (v >= 0) { highLuxThreshold = v; Serial.print("High threshold set to "); Serial.println(highLuxThreshold); } 
     else { Serial.println("Usage: high <lux>"); }
   }
- else if (key == "lvl") {
+  else if (key == "lvl") {
     int lv = val.toInt();
     if (lv >= 1 && lv <= 3) {
       level = lv;
-      autoMode = false; // <--- ADDED: Turns off the automatic light sensor
-      turnOn();         // <--- ADDED: Instantly turns the LEDs on at the new level
+      autoMode = false; // Turns off the automatic light sensor
+      turnOn();         // Instantly turns the LEDs on at the new level
       
       Serial.print("Level set to "); Serial.println(level);
       Serial.println("Manual light mode enabled");

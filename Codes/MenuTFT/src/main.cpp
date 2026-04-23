@@ -98,11 +98,16 @@ static lv_obj_t * water_timer_set_label = NULL;
 static lv_obj_t * override_clean_btn = NULL;
 static lv_obj_t * override_light_mode_btn = NULL;
 static lv_obj_t * override_light_mode_label = NULL;
+static lv_obj_t * override_mist_mode_btn = NULL;
+static lv_obj_t * override_mist_mode_label = NULL;
 static lv_obj_t * override_peltier_auto_btn = NULL;
 static lv_obj_t * override_peltier_auto_label = NULL;
+static lv_obj_t * override_notice_label = NULL;
 static int overrideLightModeState = 0;
+static int overrideMistModeState = 0;
 static int overridePeltierModeState = 0;
 static String manualPeltierCommand = "CMD:COOL";
+static unsigned long overrideNoticeUntilMs = 0;
 
 // --- TIME PICKER UI VARIABLES ---
 lv_obj_t * time_picker_bg = NULL;
@@ -156,6 +161,7 @@ static void send_watering_command();
 static void send_override_command(const char *cmd, const char *logMsg);
 static void env_page_open_cb(lv_event_t * e);
 static void override_page_open_cb(lv_event_t * e);
+static void override_mist_mode_btn_cb(lv_event_t * e);
 
 // --- PIN DEFINITIONS ---
 #define TOUCH_IRQ  16  
@@ -869,6 +875,11 @@ void fix_layout_for_display() {
     lv_obj_set_style_pad_right(ui_status_bar, 8, 0);
   }
 
+  if(override_notice_label) {
+    lv_obj_set_width(override_notice_label, 260);
+    lv_obj_align(override_notice_label, LV_ALIGN_CENTER, 0, 0);
+  }
+
   if(ui_wifistatuslabel) {
     lv_obj_align(ui_wifistatuslabel, LV_ALIGN_RIGHT_MID, -8, 0);
   }
@@ -890,6 +901,8 @@ void fix_layout_for_display() {
     lv_obj_add_flag(ui_Dashboard, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
     lv_obj_set_scroll_dir(ui_Dashboard, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(ui_Dashboard, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_width(ui_Dashboard, 8, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(ui_Dashboard, LV_OPA_70, LV_PART_SCROLLBAR);
     lv_obj_set_style_pad_bottom(ui_Dashboard, 320, 0);
   }
 
@@ -901,6 +914,8 @@ void fix_layout_for_display() {
     lv_obj_clear_flag(ui_env_page, LV_OBJ_FLAG_SCROLL_MOMENTUM);
     lv_obj_set_scroll_dir(ui_env_page, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(ui_env_page, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_width(ui_env_page, 8, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(ui_env_page, LV_OPA_70, LV_PART_SCROLLBAR);
     lv_obj_set_style_pad_top(ui_env_page, 12, 0);
     lv_obj_set_style_pad_bottom(ui_env_page, 380, 0);
 
@@ -943,7 +958,14 @@ void fix_layout_for_display() {
     lv_obj_add_flag(ui_lighting_page, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
     lv_obj_set_scroll_dir(ui_lighting_page, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(ui_lighting_page, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_width(ui_lighting_page, 8, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(ui_lighting_page, LV_OPA_70, LV_PART_SCROLLBAR);
     lv_obj_set_style_pad_bottom(ui_lighting_page, 36, 0);
+  }
+
+  if(network_settings_page) {
+    lv_obj_set_style_width(network_settings_page, 8, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(network_settings_page, LV_OPA_70, LV_PART_SCROLLBAR);
   }
 
   fix_network_settings_layout();
@@ -1188,11 +1210,20 @@ void dark_mode_switch_cb(lv_event_t * e) {
   triggerCloudPush = true;
 }
 
+static void show_override_notice(const char *text) {
+  if(override_notice_label == NULL || text == NULL || text[0] == '\0') return;
+  lv_label_set_text(override_notice_label, text);
+  lv_obj_clear_flag(override_notice_label, LV_OBJ_FLAG_HIDDEN);
+  overrideNoticeUntilMs = millis() + 2200UL;
+}
+
 static void send_override_command(const char *cmd, const char *logMsg) {
   if(cmd == NULL || cmd[0] == '\0') return;
   Serial2.println(cmd);
   Serial2.flush();
   if(logMsg != NULL && logMsg[0] != '\0') sysLog(String("Override -> ") + logMsg);
+  if(logMsg != NULL && logMsg[0] != '\0') show_override_notice(logMsg);
+  else show_override_notice(cmd);
 }
 
 static void env_page_open_cb(lv_event_t * e) {
@@ -1230,6 +1261,23 @@ static void override_mist_btn_cb(lv_event_t * e) {
   send_override_command("mist", "mist");
 }
 
+static void override_mist_mode_btn_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  if(overrideMistModeState == 0) {
+    send_override_command("mist on", "Mist: ON");
+    overrideMistModeState = 1;
+    if(override_mist_mode_label) lv_label_set_text(override_mist_mode_label, "Mist: ON");
+  } else if(overrideMistModeState == 1) {
+    send_override_command("mist off", "Mist: OFF");
+    overrideMistModeState = 2;
+    if(override_mist_mode_label) lv_label_set_text(override_mist_mode_label, "Mist: OFF");
+  } else {
+    send_override_command("mist auto", "Mist: AUTO");
+    overrideMistModeState = 0;
+    if(override_mist_mode_label) lv_label_set_text(override_mist_mode_label, "Mist: AUTO");
+  }
+}
+
 static void override_light_lvl1_btn_cb(lv_event_t * e) {
   LV_UNUSED(e);
   overrideLightModeState = 1;
@@ -1253,7 +1301,7 @@ static void override_light_lvl3_btn_cb(lv_event_t * e) {
 
 static void override_fan_btn_cb(lv_event_t * e) {
   LV_UNUSED(e);
-  send_override_command("fan", "fan");
+  send_override_command("CMD:WATER_PUMP", "Water Pump");
 }
 
 static void override_clean_sensor_btn_cb(lv_event_t * e) {
@@ -1267,14 +1315,26 @@ static void override_light_mode_btn_cb(lv_event_t * e) {
     send_override_command("light on", "light on");
     overrideLightModeState = 1;
     if(override_light_mode_label) lv_label_set_text(override_light_mode_label, "Light: ON");
+    timerEnabled = true;
+    if(timer_sw) lv_obj_add_state(timer_sw, LV_STATE_CHECKED);
+    update_timer_labels();
+    triggerCloudPush = true;
+    show_override_notice("Lighting timer set: ON");
   } else if(overrideLightModeState == 1) {
     send_override_command("light off", "light off");
     overrideLightModeState = 2;
     if(override_light_mode_label) lv_label_set_text(override_light_mode_label, "Light: OFF");
+    timerEnabled = false;
+    if(timer_sw) lv_obj_clear_state(timer_sw, LV_STATE_CHECKED);
+    update_timer_labels();
+    triggerCloudPush = true;
+    show_override_notice("Lighting timer set: OFF");
   } else {
     send_override_command("light auto", "light auto");
     overrideLightModeState = 0;
     if(override_light_mode_label) lv_label_set_text(override_light_mode_label, "Light: AUTO");
+    update_timer_labels();
+    triggerCloudPush = true;
   }
 }
 
@@ -1405,6 +1465,8 @@ static void tabview_changed_cb(lv_event_t * e) {
   lv_obj_t * tv = lv_event_get_target(e);
   if(lv_tabview_get_tab_act(tv) == 1) {
     reset_menu_view();
+  } else if(lv_tabview_get_tab_act(tv) == 0) {
+    if(ui_Dashboard) lv_obj_scroll_to_y(ui_Dashboard, 0, LV_ANIM_OFF);
   }
 }
 
@@ -2063,6 +2125,16 @@ void update_ui_from_data() {
   uiNeedsUpdate = false;
   char buf_txt[64];
 
+  static bool envPageWasVisible = false;
+  if(ui_env_page) {
+    bool envPageVisible = !lv_obj_has_flag(ui_env_page, LV_OBJ_FLAG_HIDDEN);
+    if(envPageVisible && !envPageWasVisible) {
+      if(temp_slider != NULL) lv_obj_scroll_to_view(temp_slider, LV_ANIM_OFF);
+      else lv_obj_scroll_to_y(ui_env_page, 0, LV_ANIM_OFF);
+    }
+    envPageWasVisible = envPageVisible;
+  }
+
   if(ui_temp_label) {
     snprintf(buf_txt, sizeof(buf_txt), "Temp: %.1f \xb0%s", liveTemp, useFahrenheit ? "F" : "C");
     lv_label_set_text(ui_temp_label, buf_txt);
@@ -2373,6 +2445,10 @@ void uiLoopTask(void * parameter) {
   for(;;) {
     lv_timer_handler();
     if(uiNeedsUpdate) update_ui_from_data();
+
+    if(override_notice_label && !(lv_obj_has_flag(override_notice_label, LV_OBJ_FLAG_HIDDEN)) && millis() > overrideNoticeUntilMs) {
+      lv_obj_add_flag(override_notice_label, LV_OBJ_FLAG_HIDDEN);
+    }
     
     static unsigned long lastUpdate = 0;
     if(millis() - lastUpdate > 1000) {
@@ -2516,15 +2592,21 @@ void setup() {
 
   if(ui_Cold_button) {
     lv_obj_add_event_cb(ui_Cold_button, override_cooling_btn_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_x(ui_Cold_button, -135);
     if(ui_Label3) lv_label_set_text(ui_Label3, "Cooling");
   }
+  if(ui_cold_image) lv_obj_set_x(ui_cold_image, -205);
+  if(ui_Peltier_Controls) lv_obj_set_x(ui_Peltier_Controls, -135);
   if(ui_heat_button) {
     lv_obj_add_event_cb(ui_heat_button, override_heating_btn_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_x(ui_heat_button, -135);
     lv_obj_set_style_bg_color(ui_heat_button, lv_color_hex(0xFF4B4B), 0);
     lv_obj_set_style_bg_opa(ui_heat_button, LV_OPA_COVER, 0);
     if(ui_Label4) lv_label_set_text(ui_Label4, "Heating");
     if(ui_Label4) lv_obj_set_style_text_color(ui_Label4, lv_color_black(), 0);
   }
+  if(ui_heat_image) lv_obj_set_x(ui_heat_image, -205);
+  if(ui_Peltier_Controls1) lv_obj_set_x(ui_Peltier_Controls1, -135);
 
   if(ui_display_page && override_peltier_auto_btn == NULL) {
     override_peltier_auto_btn = lv_btn_create(ui_display_page);
@@ -2541,7 +2623,7 @@ void setup() {
 
   if(ui_mist_button) {
     lv_obj_add_event_cb(ui_mist_button, override_mist_btn_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_set_x(ui_mist_button, 0);
+    lv_obj_set_x(ui_mist_button, -5);
     lv_obj_set_y(ui_mist_button, 3);
     lv_obj_set_style_bg_color(ui_mist_button, lv_color_hex(0xC3B1E1), 0);
     lv_obj_set_style_bg_opa(ui_mist_button, LV_OPA_COVER, 0);
@@ -2549,11 +2631,11 @@ void setup() {
     if(ui_Label5) lv_obj_set_style_text_color(ui_Label5, lv_color_black(), 0);
   }
   if(ui_Mist_Label) {
-    lv_obj_set_x(ui_Mist_Label, 0);
+    lv_obj_set_x(ui_Mist_Label, -5);
     lv_obj_set_y(ui_Mist_Label, -28);
   }
   if(ui_mist_image) {
-    lv_obj_set_x(ui_mist_image, -58);
+    lv_obj_set_x(ui_mist_image, -63);
     lv_obj_set_y(ui_mist_image, 3);
   }
 
@@ -2561,8 +2643,8 @@ void setup() {
     override_light_mode_btn = lv_btn_create(ui_display_page);
     lv_obj_set_size(override_light_mode_btn, 130, 40);
     lv_obj_set_align(override_light_mode_btn, LV_ALIGN_CENTER);
-    lv_obj_set_x(override_light_mode_btn, 0);
-    lv_obj_set_y(override_light_mode_btn, -60);
+    lv_obj_set_x(override_light_mode_btn, 161);
+    lv_obj_set_y(override_light_mode_btn, 55);
     lv_obj_add_event_cb(override_light_mode_btn, override_light_mode_btn_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_bg_color(override_light_mode_btn, lv_color_hex(0xFFF3B0), 0);
     lv_obj_set_style_bg_opa(override_light_mode_btn, LV_OPA_COVER, 0);
@@ -2572,9 +2654,19 @@ void setup() {
     lv_obj_center(override_light_mode_label);
   }
 
+  if((ui_status_bar || ui_Screen1) && override_notice_label == NULL) {
+    override_notice_label = lv_label_create(ui_status_bar ? ui_status_bar : ui_Screen1);
+    lv_obj_set_width(override_notice_label, 430);
+    lv_label_set_long_mode(override_notice_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(override_notice_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(override_notice_label, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_clear_flag(override_notice_label, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(override_notice_label, LV_OBJ_FLAG_HIDDEN);
+  }
+
   if(ui_light_level_1) {
     lv_obj_add_event_cb(ui_light_level_1, override_light_lvl1_btn_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_set_x(ui_light_level_1, 166);
+    lv_obj_set_x(ui_light_level_1, 161);
     lv_obj_set_y(ui_light_level_1, -60);
     lv_obj_set_style_bg_color(ui_light_level_1, lv_color_hex(0xFFE082), 0);
     lv_obj_set_style_bg_opa(ui_light_level_1, LV_OPA_COVER, 0);
@@ -2582,7 +2674,7 @@ void setup() {
   }
   if(ui_light_level_2) {
     lv_obj_add_event_cb(ui_light_level_2, override_light_lvl2_btn_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_set_x(ui_light_level_2, 166);
+    lv_obj_set_x(ui_light_level_2, 161);
     lv_obj_set_y(ui_light_level_2, -30);
     lv_obj_set_style_bg_color(ui_light_level_2, lv_color_hex(0xFFB74D), 0);
     lv_obj_set_style_bg_opa(ui_light_level_2, LV_OPA_COVER, 0);
@@ -2590,46 +2682,64 @@ void setup() {
   }
   if(ui_light_level_3) {
     lv_obj_add_event_cb(ui_light_level_3, override_light_lvl3_btn_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_set_x(ui_light_level_3, 166);
+    lv_obj_set_x(ui_light_level_3, 161);
     lv_obj_set_y(ui_light_level_3, 0);
     lv_obj_set_style_bg_color(ui_light_level_3, lv_color_hex(0x81C784), 0);
     lv_obj_set_style_bg_opa(ui_light_level_3, LV_OPA_COVER, 0);
     if(ui_Label8) lv_obj_set_style_text_color(ui_Label8, lv_color_black(), 0);
   }
   if(ui_UV_Light) {
-    lv_obj_set_x(ui_UV_Light, 166);
+    lv_obj_set_x(ui_UV_Light, 161);
     lv_obj_set_y(ui_UV_Light, -90);
   }
   if(ui_light_image) {
-    lv_obj_set_x(ui_light_image, 102);
+    lv_obj_set_x(ui_light_image, 97);
     lv_obj_set_y(ui_light_image, -60);
   }
   if(ui_brighter_light) {
-    lv_obj_set_x(ui_brighter_light, 102);
+    lv_obj_set_x(ui_brighter_light, 97);
     lv_obj_set_y(ui_brighter_light, 0);
   }
 
   if(ui_water_pump_button) {
     lv_obj_add_event_cb(ui_water_pump_button, override_fan_btn_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_set_x(ui_water_pump_button, 166);
-    lv_obj_set_y(ui_water_pump_button, 70);
+    lv_obj_set_x(ui_water_pump_button, -5);
+    lv_obj_set_y(ui_water_pump_button, -60);
+    lv_obj_set_width(ui_water_pump_button, 60);
     lv_obj_set_style_bg_color(ui_water_pump_button, lv_color_hex(0xCFF4FF), 0);
     lv_obj_set_style_bg_opa(ui_water_pump_button, LV_OPA_COVER, 0);
-    if(ui_Label9) lv_label_set_text(ui_Label9, "Fan");
+    if(ui_Label9) lv_label_set_text(ui_Label9, "Water");
     if(ui_Label9) lv_obj_set_style_text_color(ui_Label9, lv_color_black(), 0);
   }
   if(ui_Water_Pump) {
-    lv_obj_set_x(ui_Water_Pump, 166);
-    lv_obj_set_y(ui_Water_Pump, 40);
+    lv_obj_set_x(ui_Water_Pump, -5);
+    lv_obj_set_y(ui_Water_Pump, -90);
   }
   if(ui_Water_Pump_Image) {
-    lv_obj_add_flag(ui_Water_Pump_Image, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(ui_Water_Pump_Image, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_x(ui_Water_Pump_Image, -58);
+    lv_obj_set_y(ui_Water_Pump_Image, -60);
+  }
+
+  if(ui_display_page && override_mist_mode_btn == NULL) {
+    override_mist_mode_btn = lv_btn_create(ui_display_page);
+    lv_obj_set_size(override_mist_mode_btn, 130, 34);
+    lv_obj_set_align(override_mist_mode_btn, LV_ALIGN_CENTER);
+    lv_obj_set_x(override_mist_mode_btn, -5);
+    lv_obj_set_y(override_mist_mode_btn, 42);
+    lv_obj_add_event_cb(override_mist_mode_btn, override_mist_mode_btn_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_style_bg_color(override_mist_mode_btn, lv_color_hex(0xD7CCF8), 0);
+    lv_obj_set_style_bg_opa(override_mist_mode_btn, LV_OPA_COVER, 0);
+    override_mist_mode_label = lv_label_create(override_mist_mode_btn);
+    lv_label_set_text(override_mist_mode_label, "Mist: AUTO");
+    lv_obj_set_style_text_color(override_mist_mode_label, lv_color_black(), 0);
+    lv_obj_center(override_mist_mode_label);
   }
 
   if(ui_display_page && override_clean_btn == NULL) {
     override_clean_btn = lv_btn_create(ui_display_page);
     lv_obj_set_size(override_clean_btn, 140, 40);
-    lv_obj_align(override_clean_btn, LV_ALIGN_CENTER, 0, 54);
+    lv_obj_align(override_clean_btn, LV_ALIGN_CENTER, -5, 86);
     lv_obj_add_event_cb(override_clean_btn, override_clean_sensor_btn_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *clean_label = lv_label_create(override_clean_btn);
     lv_label_set_text(clean_label, "Clean Sensor");
