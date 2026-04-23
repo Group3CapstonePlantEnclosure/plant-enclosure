@@ -63,9 +63,12 @@ lv_obj_t * wifi_connect_btn = NULL;
 bool wifi_keyboard_hidden = false;
 Preferences wifiPrefs;
 static bool wifiScanPendingResults = false;
+static int wifiScanRetryCount = 0;
+static bool wifiScanTemporarilyDisconnected = false;
 
 static lv_obj_t * network_settings_page = NULL;
 static lv_obj_t * network_connect_btn = NULL;
+static lv_obj_t * network_known_btn = NULL;
 static lv_obj_t * network_forget_btn = NULL;
 static lv_obj_t * dashboard_hum_card = NULL;
 static lv_obj_t * dashboard_soil_card = NULL;
@@ -147,6 +150,7 @@ void close_wifi_overlays(bool restoreTabview);
 void load_wifi_credentials();
 void save_wifi_credentials(const char *ssid, const char *password);
 bool connect_to_wifi(const char *ssid, const char *password, bool useFastReconnect);
+void sysLog(String msg);
 bool patch_firebase_payload(const String &payload);
 bool push_settings_to_firebase();
 bool push_live_values_to_firebase();
@@ -165,6 +169,7 @@ static void create_network_settings_page();
 static void configure_dashboard_widgets();
 static void fix_network_settings_layout();
 static void poll_wifi_scan_results();
+static void build_known_networks_ui();
 static void show_network_settings_page();
 static void open_menu_root();
 static bool wifi_overlay_active();
@@ -228,7 +233,7 @@ bool isDarkMode = true;
 bool timerEnabled = false;
 int timeOnHour = 8, timeOnMinute = 0, timeOffHour = 20, timeOffMinute = 0;
 int currentHour = 12, currentMinute = 0, globalBrightness = 10;
-int timeZoneOffset = -5; 
+int timeZoneOffset = -4;
 bool waterTimerEnabled = false;
 int waterIntervalValue = 1;
 int waterIntervalUnit = 1;
@@ -856,12 +861,7 @@ void load_settings_from_firebase() {
   if(!doc["timeOffHour"].isNull() && timeOffHour != doc["timeOffHour"].as<int>()) { timeOffHour = doc["timeOffHour"].as<int>(); changed = true; }
   if(!doc["timeOffMin"].isNull() && timeOffMinute != doc["timeOffMin"].as<int>()) { timeOffMinute = doc["timeOffMin"].as<int>(); changed = true; }
   if(!doc["globalBrightness"].isNull() && globalBrightness != doc["globalBrightness"].as<int>()) { globalBrightness = doc["globalBrightness"].as<int>(); changed = true; }
-  if(!doc["timeZoneOffset"].isNull() && timeZoneOffset != doc["timeZoneOffset"].as<int>()) {
-    timeZoneOffset = doc["timeZoneOffset"].as<int>();
-    configTime(timeZoneOffset * 3600, 0, "pool.ntp.org", "time.nist.gov");
-    sysLog("Timezone updated to UTC " + String(timeZoneOffset));
-    changed = true;
-  }
+  // Keep timezone offset controlled by firmware default/push path.
   if(!doc["waterTimerEnabled"].isNull() && waterTimerEnabled != doc["waterTimerEnabled"].as<bool>()) {
     waterTimerEnabled = doc["waterTimerEnabled"].as<bool>();
     schedule_next_watering(true);
@@ -1583,10 +1583,81 @@ static void wifi_keyboard_corner_hide_cb(lv_event_t * e) {
   set_wifi_keyboard_visibility(true);
 }
 
+static void known_network_btn_cb(lv_event_t * e) {
+  lv_obj_t * btn = lv_event_get_target(e);
+  const char *ssid = lv_list_get_btn_text(wifi_list, btn);
+  if(ssid == NULL || ssid[0] == '\0') return;
+
+  const char *password = "";
+  bool useFast = false;
+
+  if(saved_ssid[0] != '\0' && strcmp(ssid, saved_ssid) == 0) {
+    password = saved_pass;
+    useFast = true;
+  } else {
+    for(size_t i = 0; i < sizeof(myNetworks) / sizeof(myNetworks[0]); ++i) {
+      if(strcmp(ssid, myNetworks[i].ssid) == 0) {
+        password = myNetworks[i].pass;
+        break;
+      }
+    }
+  }
+
+  if(connect_to_wifi(ssid, password, useFast)) {
+    save_wifi_credentials(ssid, password);
+    load_settings_from_firebase();
+    open_menu_root();
+  }
+}
+
+static void build_known_networks_ui() {
+  if(wifi_list != NULL) {
+    lv_obj_del(wifi_list);
+    wifi_list = NULL;
+  }
+
+  if(tabview != NULL) lv_obj_add_flag(tabview, LV_OBJ_FLAG_HIDDEN);
+
+  wifi_list = lv_list_create(lv_scr_act());
+  fix_wifi_list_layout();
+
+  lv_obj_t * back_btn = lv_list_add_btn(wifi_list, LV_SYMBOL_LEFT, "Back to Settings");
+  lv_obj_add_event_cb(back_btn, [](lv_event_t * e){
+    LV_UNUSED(e);
+    show_network_settings_page();
+  }, LV_EVENT_CLICKED, NULL);
+
+  lv_list_add_text(wifi_list, "Known Networks");
+
+  bool addedAny = false;
+  if(saved_ssid[0] != '\0') {
+    lv_obj_t * saved_btn = lv_list_add_btn(wifi_list, LV_SYMBOL_SAVE, saved_ssid);
+    lv_obj_add_event_cb(saved_btn, known_network_btn_cb, LV_EVENT_CLICKED, NULL);
+    addedAny = true;
+  }
+
+  for(size_t i = 0; i < sizeof(myNetworks) / sizeof(myNetworks[0]); ++i) {
+    if(saved_ssid[0] != '\0' && strcmp(saved_ssid, myNetworks[i].ssid) == 0) continue;
+    lv_obj_t * btn = lv_list_add_btn(wifi_list, LV_SYMBOL_WIFI, myNetworks[i].ssid);
+    lv_obj_add_event_cb(btn, known_network_btn_cb, LV_EVENT_CLICKED, NULL);
+    addedAny = true;
+  }
+
+  if(!addedAny) {
+    lv_list_add_btn(wifi_list, LV_SYMBOL_WARNING, "No known networks saved.");
+  }
+}
+
 static void network_connect_btn_cb(lv_event_t * e) {
   LV_UNUSED(e);
   if(network_settings_page != NULL) lv_obj_add_flag(network_settings_page, LV_OBJ_FLAG_HIDDEN);
   build_wifi_scanner_ui();
+}
+
+static void network_known_btn_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  if(network_settings_page != NULL) lv_obj_add_flag(network_settings_page, LV_OBJ_FLAG_HIDDEN);
+  build_known_networks_ui();
 }
 
 static void forget_wifi_credentials() {
@@ -1650,9 +1721,17 @@ static void create_network_settings_page() {
   lv_label_set_text(connect_label, "Network Connect");
   lv_obj_center(connect_label);
 
+  network_known_btn = lv_btn_create(network_settings_page);
+  lv_obj_set_size(network_known_btn, 260, 48);
+  lv_obj_align(network_known_btn, LV_ALIGN_TOP_MID, 0, 206);
+  lv_obj_add_event_cb(network_known_btn, network_known_btn_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t * known_label = lv_label_create(network_known_btn);
+  lv_label_set_text(known_label, "Known Networks");
+  lv_obj_center(known_label);
+
   network_forget_btn = lv_btn_create(network_settings_page);
   lv_obj_set_size(network_forget_btn, 260, 48);
-  lv_obj_align(network_forget_btn, LV_ALIGN_TOP_MID, 0, 206);
+  lv_obj_align(network_forget_btn, LV_ALIGN_TOP_MID, 0, 274);
   lv_obj_add_event_cb(network_forget_btn, network_forget_btn_cb, LV_EVENT_CLICKED, NULL);
   lv_obj_t * forget_label = lv_label_create(network_forget_btn);
   lv_label_set_text(forget_label, "Forget WiFi");
@@ -2101,9 +2180,30 @@ void build_wifi_scanner_ui() {
 
   isScanning = true;
   wifiScanPendingResults = true;
+  wifiScanRetryCount = 0;
+  wifiScanTemporarilyDisconnected = false;
   sysLog("Scanning WiFi networks...");
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+
+  if(WiFi.status() == WL_CONNECTED) {
+    WiFi.disconnect(false, false);
+    delay(150);
+    wifiScanTemporarilyDisconnected = true;
+  }
+
   WiFi.scanDelete();
-  WiFi.scanNetworks(true, false);
+  int startResult = WiFi.scanNetworks(true, false);
+  if(startResult == WIFI_SCAN_FAILED) {
+    wifiScanRetryCount = 1;
+    delay(50);
+    startResult = WiFi.scanNetworks(true, false);
+  }
+
+  if(startResult == WIFI_SCAN_FAILED) {
+    wifiScanPendingResults = false;
+    isScanning = false;
+  }
 
   wifi_list = lv_list_create(lv_scr_act());
   fix_wifi_list_layout();
@@ -2115,7 +2215,8 @@ void build_wifi_scanner_ui() {
   }, LV_EVENT_CLICKED, NULL);
 
   lv_list_add_text(wifi_list, "Available Networks");
-  lv_list_add_btn(wifi_list, LV_SYMBOL_REFRESH, "Scanning...");
+  if(startResult == WIFI_SCAN_FAILED) lv_list_add_btn(wifi_list, LV_SYMBOL_WARNING, "Scan failed. Tap Network Connect again.");
+  else lv_list_add_btn(wifi_list, LV_SYMBOL_REFRESH, "Scanning...");
 }
 
 static void poll_wifi_scan_results() {
@@ -2123,6 +2224,29 @@ static void poll_wifi_scan_results() {
 
   int n = WiFi.scanComplete();
   if(n == WIFI_SCAN_RUNNING) return;
+
+  if(n == WIFI_SCAN_FAILED) {
+    if(wifiScanRetryCount < 1) {
+      wifiScanRetryCount++;
+      WiFi.scanDelete();
+      WiFi.scanNetworks(true, false);
+      return;
+    }
+
+    wifiScanPendingResults = false;
+    isScanning = false;
+    lv_obj_clean(wifi_list);
+
+    lv_obj_t * back_btn = lv_list_add_btn(wifi_list, LV_SYMBOL_LEFT, "Back to Settings");
+    lv_obj_add_event_cb(back_btn, [](lv_event_t * e){
+      LV_UNUSED(e);
+      show_network_settings_page();
+    }, LV_EVENT_CLICKED, NULL);
+
+    lv_list_add_text(wifi_list, "Available Networks");
+    lv_list_add_btn(wifi_list, LV_SYMBOL_WARNING, "Scan failed. Tap Network Connect again.");
+    return;
+  }
 
   // Rebuild list content once scan is complete.
   lv_obj_clean(wifi_list);
@@ -2150,6 +2274,11 @@ static void poll_wifi_scan_results() {
   WiFi.scanDelete();
   isScanning = false;
   wifiScanPendingResults = false;
+
+  if(wifiScanTemporarilyDisconnected && saved_ssid[0] != '\0' && WiFi.status() != WL_CONNECTED) {
+    connect_to_wifi(saved_ssid, saved_pass, true);
+  }
+  wifiScanTemporarilyDisconnected = false;
 }
 
 void build_time_picker_modal() {
