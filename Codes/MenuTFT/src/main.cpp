@@ -103,11 +103,22 @@ static lv_obj_t * override_mist_mode_label = NULL;
 static lv_obj_t * override_peltier_auto_btn = NULL;
 static lv_obj_t * override_peltier_auto_label = NULL;
 static lv_obj_t * override_notice_label = NULL;
+static lv_obj_t * menu_test_btn = NULL;
+static lv_obj_t * test_panel = NULL;
+static lv_obj_t * test_top_fan_btn = NULL;
+static lv_obj_t * test_top_fan_label = NULL;
+static lv_obj_t * test_bottom_fan_btn = NULL;
+static lv_obj_t * test_bottom_fan_label = NULL;
+static lv_obj_t * test_close_btn = NULL;
+static lv_obj_t * test_status_label = NULL;
 static int overrideLightModeState = 0;
 static int overrideMistModeState = 0;
 static int overridePeltierModeState = 0;
 static String manualPeltierCommand = "CMD:COOL";
 static unsigned long overrideNoticeUntilMs = 0;
+static bool testTopFanOn = false;
+static bool testBottomFanOn = false;
+static unsigned long testStatusUntilMs = 0;
 
 // --- TIME PICKER UI VARIABLES ---
 lv_obj_t * time_picker_bg = NULL;
@@ -162,6 +173,13 @@ static void send_override_command(const char *cmd, const char *logMsg);
 static void env_page_open_cb(lv_event_t * e);
 static void override_page_open_cb(lv_event_t * e);
 static void override_mist_mode_btn_cb(lv_event_t * e);
+static void test_menu_btn_cb(lv_event_t * e);
+static void test_close_btn_cb(lv_event_t * e);
+static void test_top_fan_btn_cb(lv_event_t * e);
+static void test_bottom_fan_btn_cb(lv_event_t * e);
+static void test_peltier_heat_btn_cb(lv_event_t * e);
+static void test_peltier_cool_btn_cb(lv_event_t * e);
+static void test_set_status(const char *text);
 
 // --- PIN DEFINITIONS ---
 #define TOUCH_IRQ  16  
@@ -214,6 +232,16 @@ String webLogBuffer = "Device Booted. System initialized.\n";
 unsigned long lastMinuteTick = 0, lastSerialRecv = 0, lastControlCheck = 0;
 String lastPeltierCommand = "";
 int lastLightPwm = -1;
+String lastMistCommand = "";
+String lastFanCommand = "";
+unsigned long peltierPulseUntilMs = 0;
+int peltierPulseMode = 0; // 0=idle, 1=heat pulse, 2=cool pulse
+unsigned long lastSoilPumpMs = 0;
+bool soilHighAlertShown = false;
+bool soilReadingSeen = false;
+unsigned long serialRxBytes = 0;
+unsigned long serialRxPackets = 0;
+unsigned long lastRxDiagMs = 0;
 
 volatile bool triggerCloudPush = false;
 volatile bool uiNeedsUpdate = false; 
@@ -1355,6 +1383,61 @@ static void override_peltier_auto_btn_cb(lv_event_t * e) {
   }
 }
 
+static void test_menu_btn_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  if(test_panel) lv_obj_clear_flag(test_panel, LV_OBJ_FLAG_HIDDEN);
+  test_set_status("Ready");
+  testStatusUntilMs = 0;
+}
+
+static void test_close_btn_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  if(test_panel) lv_obj_add_flag(test_panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void test_top_fan_btn_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  testTopFanOn = !testTopFanOn;
+  send_override_command(testTopFanOn ? "fan on" : "fan off", testTopFanOn ? "Top fan ON" : "Top fan OFF");
+  if(test_top_fan_label) lv_label_set_text(test_top_fan_label, testTopFanOn ? "Top Fan: ON" : "Top Fan: OFF");
+  test_set_status(testTopFanOn ? "Sent: fan on" : "Sent: fan off");
+  testStatusUntilMs = millis() + 2500UL;
+}
+
+static void test_bottom_fan_btn_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  testBottomFanOn = !testBottomFanOn;
+  send_override_command(testBottomFanOn ? "bottom fan on" : "bottom fan off", testBottomFanOn ? "Bottom fan ON" : "Bottom fan OFF");
+  if(test_bottom_fan_label) lv_label_set_text(test_bottom_fan_label, testBottomFanOn ? "Bottom Fan: ON" : "Bottom Fan: OFF");
+  test_set_status(testBottomFanOn ? "Sent: bottom fan on" : "Sent: bottom fan off");
+  testStatusUntilMs = millis() + 2500UL;
+}
+
+static void test_peltier_heat_btn_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  manualPeltierCommand = "CMD:HEAT";
+  overridePeltierModeState = 1;
+  if(override_peltier_auto_label) lv_label_set_text(override_peltier_auto_label, "Peltier: ON");
+  send_override_command("CMD:HEAT", "Peltier HEAT test");
+  test_set_status("Sent: CMD:HEAT");
+  testStatusUntilMs = millis() + 2500UL;
+}
+
+static void test_peltier_cool_btn_cb(lv_event_t * e) {
+  LV_UNUSED(e);
+  manualPeltierCommand = "CMD:COOL";
+  overridePeltierModeState = 1;
+  if(override_peltier_auto_label) lv_label_set_text(override_peltier_auto_label, "Peltier: ON");
+  send_override_command("CMD:COOL", "Peltier COOL test");
+  test_set_status("Sent: CMD:COOL");
+  testStatusUntilMs = millis() + 2500UL;
+}
+
+static void test_set_status(const char *text) {
+  if(test_status_label == NULL || text == NULL) return;
+  lv_label_set_text(test_status_label, text);
+}
+
 // ==========================================
 // WIFI & TIME PICKER UI 
 // ==========================================
@@ -2293,6 +2376,50 @@ static bool parseTaggedFloat(const String &data, const char *tag, float &outValu
   return true;
 }
 
+static void processSensorPacket(const String &packet) {
+  String data = packet;
+  data.trim();
+  if(data.length() == 0) return;
+
+  Serial.print("[UART RX] ");
+  Serial.println(data);
+
+  bool changed = false;
+  float value = 0.0f;
+
+  if(parseTaggedFloat(data, "T:", value)) {
+    liveTemp = useFahrenheit ? value : ((value - 32.0f) * 5.0f / 9.0f);
+    Serial.print("  -> liveTemp = "); Serial.println(liveTemp);
+    changed = true;
+  }
+  if(parseTaggedFloat(data, "H:", value)) {
+    liveHum = value;
+    Serial.print("  -> liveHum = "); Serial.println(liveHum);
+    changed = true;
+  }
+  if(parseTaggedFloat(data, "L:", value)) {
+    liveLux = value;
+    Serial.print("  -> liveLux = "); Serial.println(liveLux);
+    changed = true;
+  }
+  if(parseTaggedFloat(data, "S:", value) || parseTaggedFloat(data, "M:", value)) {
+    // Ignore sentinel/invalid soil values when probe is not wired.
+    if(value >= 0.0f) {
+      liveSoil = value;
+      soilReadingSeen = true;
+      Serial.print("  -> liveSoil = "); Serial.println(liveSoil);
+      changed = true;
+    }
+  }
+
+  if(changed) {
+    lastSerialRecv = millis();
+    uiNeedsUpdate = true;
+  } else {
+    Serial.println("  -> No tags matched!");
+  }
+}
+
 void updateClock() {
   const bool firstTick = (lastMinuteTick == 0);
   if(!firstTick && millis() - lastMinuteTick < 60000UL) return;
@@ -2357,19 +2484,41 @@ void evaluateControlLogic() {
 
   if(lastSerialRecv == 0 || millis() - lastSerialRecv > 15000UL) return;
 
+  const unsigned long nowMs = millis();
   const char *peltierCmd = "CMD:PELTIER_OFF";
+
+  // Temperature auto logic: if outside bounds by 10F, run a 10-second pulse then re-check.
   if(overridePeltierModeState == 0) {
-    if(liveTemp > tempHigh) peltierCmd = "CMD:COOL";
-    else if(liveTemp < tempLow) peltierCmd = "CMD:HEAT";
+    if(peltierPulseMode != 0) {
+      if(nowMs >= peltierPulseUntilMs) {
+        peltierPulseMode = 0;
+        peltierCmd = "CMD:PELTIER_OFF";
+      } else {
+        peltierCmd = (peltierPulseMode == 1) ? "CMD:HEAT" : "CMD:COOL";
+      }
+    } else {
+      if(liveTemp <= (tempLow - 10.0f)) {
+        peltierPulseMode = 1;
+        peltierPulseUntilMs = nowMs + 10000UL;
+        peltierCmd = "CMD:HEAT";
+      } else if(liveTemp >= (tempHigh + 10.0f)) {
+        peltierPulseMode = 2;
+        peltierPulseUntilMs = nowMs + 10000UL;
+        peltierCmd = "CMD:COOL";
+      }
+    }
   } else if(overridePeltierModeState == 1) {
+    peltierPulseMode = 0;
     peltierCmd = manualPeltierCommand.c_str();
+  } else {
+    peltierPulseMode = 0;
   }
 
   if(lastPeltierCommand != String(peltierCmd)) {
     lastPeltierCommand = String(peltierCmd);
     sysLog("Arduino control -> " + lastPeltierCommand);
+    Serial2.println(peltierCmd);
   }
-  Serial2.println(peltierCmd);
 
   bool turnLightOn = false;
   if(overrideLightModeState == 1) {
@@ -2395,49 +2544,87 @@ void evaluateControlLogic() {
   if(pwmVal != lastLightPwm) {
     lastLightPwm = pwmVal;
     sysLog("Arduino light PWM -> " + String(pwmVal));
+    Serial2.print("CMD:LIGHT,");
+    Serial2.println(pwmVal);
   }
-  Serial2.print("CMD:LIGHT,");
-  Serial2.println(pwmVal);
+
+  // Humidity auto logic with override precedence.
+  bool mistOn = false;
+  bool fanOn = false;
+  if(overrideMistModeState == 1) {
+    mistOn = true;
+  } else if(overrideMistModeState == 0) {
+    if(liveHum <= (humLow - 10.0f)) {
+      mistOn = true;
+      fanOn = false;
+    } else if(liveHum >= (humHigh + 10.0f)) {
+      mistOn = false;
+      fanOn = true;
+    }
+  }
+
+  const char *mistCmd = mistOn ? "mist on" : "mist off";
+  if(lastMistCommand != String(mistCmd)) {
+    lastMistCommand = String(mistCmd);
+    sysLog(String("Arduino control -> ") + mistCmd);
+    Serial2.println(mistCmd);
+  }
+
+  const char *fanCmd = fanOn ? "fan on" : "fan off";
+  if(lastFanCommand != String(fanCmd)) {
+    lastFanCommand = String(fanCmd);
+    sysLog(String("Arduino control -> ") + fanCmd);
+    Serial2.println(fanCmd);
+  }
+
+  // Soil moisture auto checks (sensor may be absent; only act after first valid S:/M: packet).
+  if(soilReadingSeen) {
+    if(liveSoil <= (soilLow - 10.0f) && (nowMs - lastSoilPumpMs >= 15000UL)) {
+      lastSoilPumpMs = nowMs;
+      send_override_command("CMD:WATER_PUMP", "Soil low: watering");
+    }
+
+    if(liveSoil >= (soilHigh + 20.0f)) {
+      if(!soilHighAlertShown) {
+        soilHighAlertShown = true;
+        show_override_notice("Soil moisture high");
+        sysLog("Alert -> Soil moisture above high threshold");
+      }
+    } else if(liveSoil <= (soilHigh + 15.0f)) {
+      soilHighAlertShown = false;
+    }
+  }
 }
 
 void checkSerialSensors() {
+  static String rxLine = "";
+
   while(Serial2.available()) {
-    String data = Serial2.readStringUntil('\n');
-    data.trim();
-    if(data.length() == 0) continue;
+    char ch = (char)Serial2.read();
+    serialRxBytes++;
 
-    Serial.print("[UART RX] ");
-    Serial.println(data);
+    if(ch == '\n' || ch == '\r') {
+      if(rxLine.length() > 0) {
+        serialRxPackets++;
+        processSensorPacket(rxLine);
+        rxLine = "";
+      }
+      continue;
+    }
 
-    bool changed = false;
-    float value = 0.0f;
+    if(rxLine.length() < 200) rxLine += ch;
+    else rxLine = "";
+  }
 
-    if(parseTaggedFloat(data, "T:", value)) {
-      liveTemp = useFahrenheit ? value : ((value - 32.0f) * 5.0f / 9.0f);
-      Serial.print("  -> liveTemp = "); Serial.println(liveTemp);
-      changed = true;
-    }
-    if(parseTaggedFloat(data, "H:", value)) {
-      liveHum = value;
-      Serial.print("  -> liveHum = "); Serial.println(liveHum);
-      changed = true;
-    }
-    if(parseTaggedFloat(data, "L:", value)) {
-      liveLux = value;
-      Serial.print("  -> liveLux = "); Serial.println(liveLux);
-      changed = true;
-    }
-    if(parseTaggedFloat(data, "S:", value) || parseTaggedFloat(data, "M:", value)) {
-      liveSoil = value;
-      Serial.print("  -> liveSoil = "); Serial.println(liveSoil);
-      changed = true;
-    }
-    if(changed) {
-      lastSerialRecv = millis();
-      uiNeedsUpdate = true;
-    } else {
-      Serial.println("  -> No tags matched!");
-    }
+  if(millis() - lastRxDiagMs >= 5000UL) {
+    lastRxDiagMs = millis();
+    Serial.print("[UART RX STAT] bytes=");
+    Serial.print(serialRxBytes);
+    Serial.print(" packets=");
+    Serial.print(serialRxPackets);
+    Serial.print(" lastAgeMs=");
+    if(lastSerialRecv == 0) Serial.println("none");
+    else Serial.println(millis() - lastSerialRecv);
   }
 }
 
@@ -2448,6 +2635,11 @@ void uiLoopTask(void * parameter) {
 
     if(override_notice_label && !(lv_obj_has_flag(override_notice_label, LV_OBJ_FLAG_HIDDEN)) && millis() > overrideNoticeUntilMs) {
       lv_obj_add_flag(override_notice_label, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if(test_status_label != NULL && testStatusUntilMs > 0 && millis() > testStatusUntilMs) {
+      lv_label_set_text(test_status_label, "Ready");
+      testStatusUntilMs = 0;
     }
     
     static unsigned long lastUpdate = 0;
@@ -2465,13 +2657,21 @@ void uiLoopTask(void * parameter) {
 
 void setup() {
   Serial.begin(115200);
+  unsigned long serialWaitStart = millis();
+  while(!Serial && (millis() - serialWaitStart) < 3000UL) {
+    delay(10);
+  }
   Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
   Serial2.setTimeout(25);
+  Serial.println("[BOOT] setup begin");
+  Serial.println("[BOOT] serial initialized");
 
 // 1. INIT SCREEN & TOUCH
+  Serial.println("[BOOT] tft.begin start");
   tft.begin();
   tft.setRotation(1); // Landscape
   tft.setSwapBytes(true); 
+  Serial.println("[BOOT] tft initialized");
   
   // Apply your unique touch settings
   uint16_t calData[5] = { 260, 3657, 273, 3580, 7 };
@@ -2483,14 +2683,19 @@ void setup() {
   tft.fillScreen(TFT_BLACK);
 
   // --- Initialize LVGL v8 ---
+  Serial.println("[BOOT] lv_init start");
   lv_init();
 
   // PSRAM ALLOCATION (Fixes DRAM Overflow Error)
   buf = (lv_color_t *)ps_malloc(screenWidth * 40 * sizeof(lv_color_t));
   if (buf == NULL) {
-      Serial.println("PSRAM Allocation Failed!");
-      while(1) yield();
+      Serial.println("[BOOT] PSRAM Allocation Failed!");
+      while(1) {
+        Serial.println("[BOOT] halted: ps_malloc failed");
+        delay(1000);
+      }
   }
+  Serial.println("[BOOT] lvgl buffer allocated");
 
   lv_disp_draw_buf_init(&draw_buf, buf, NULL, screenWidth * 40);
 
@@ -2501,16 +2706,20 @@ void setup() {
   disp_drv.flush_cb = my_disp_flush;
   disp_drv.draw_buf = &draw_buf;
   lv_disp_drv_register(&disp_drv);
+  Serial.println("[BOOT] display driver registered");
 
   static lv_indev_drv_t indev_drv;
   lv_indev_drv_init(&indev_drv);
   indev_drv.type = LV_INDEV_TYPE_POINTER;
   indev_drv.read_cb = my_touchpad_read;
   lv_indev_drv_register(&indev_drv);
+  Serial.println("[BOOT] input driver registered");
 
   // --- INITIALIZE SQUARELINE UI ---
+  Serial.println("[BOOT] ui_init start");
   ui_init();
   fix_layout_for_display();
+  Serial.println("[BOOT] ui initialized");
 
   // --- MAP SQUARELINE OBJECTS ---
   tabview = ui_TabView1;
@@ -2588,6 +2797,97 @@ void setup() {
   }
   if(ui_net) {
     lv_obj_set_style_text_color(ui_net, lv_color_black(), 0);
+  }
+
+  if(menu_test_btn == NULL) {
+    lv_obj_t *menuParent = NULL;
+    if(ui_btn_env) menuParent = lv_obj_get_parent(ui_btn_env);
+    else if(ui_Override) menuParent = lv_obj_get_parent(ui_Override);
+    else if(ui_Network_Settings) menuParent = lv_obj_get_parent(ui_Network_Settings);
+
+    if(menuParent != NULL) {
+      menu_test_btn = lv_btn_create(menuParent);
+      lv_obj_set_size(menu_test_btn, 120, 42);
+      lv_obj_align(menu_test_btn, LV_ALIGN_CENTER, 0, 112);
+      lv_obj_set_style_bg_color(menu_test_btn, lv_color_hex(0xD4F8B5), 0);
+      lv_obj_set_style_bg_opa(menu_test_btn, LV_OPA_COVER, 0);
+      lv_obj_add_event_cb(menu_test_btn, test_menu_btn_cb, LV_EVENT_CLICKED, NULL);
+
+      lv_obj_t *testMenuLabel = lv_label_create(menu_test_btn);
+      lv_label_set_text(testMenuLabel, "Test");
+      lv_obj_set_style_text_color(testMenuLabel, lv_color_black(), 0);
+      lv_obj_center(testMenuLabel);
+    }
+  }
+
+  if(test_panel == NULL && ui_Screen1 != NULL) {
+    test_panel = lv_obj_create(ui_Screen1);
+    lv_obj_set_size(test_panel, 330, 210);
+    lv_obj_align(test_panel, LV_ALIGN_CENTER, 0, 8);
+    lv_obj_set_style_bg_color(test_panel, lv_color_hex(0x1F2430), 0);
+    lv_obj_set_style_bg_opa(test_panel, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(test_panel, lv_color_hex(0x4E5A6B), 0);
+    lv_obj_set_style_border_width(test_panel, 2, 0);
+    lv_obj_set_style_pad_all(test_panel, 10, 0);
+    lv_obj_clear_flag(test_panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(test_panel, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *title = lv_label_create(test_panel);
+    lv_label_set_text(title, "Hardware Test Controls");
+    lv_obj_set_style_text_color(title, lv_color_white(), 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+
+    test_status_label = lv_label_create(test_panel);
+    lv_label_set_text(test_status_label, "Ready");
+    lv_obj_set_width(test_status_label, 300);
+    lv_label_set_long_mode(test_status_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_color(test_status_label, lv_color_hex(0xDDE7F5), 0);
+    lv_obj_set_style_text_align(test_status_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(test_status_label, LV_ALIGN_TOP_MID, 0, 22);
+
+    test_close_btn = lv_btn_create(test_panel);
+    lv_obj_set_size(test_close_btn, 56, 30);
+    lv_obj_align(test_close_btn, LV_ALIGN_TOP_RIGHT, 0, 0);
+    lv_obj_add_event_cb(test_close_btn, test_close_btn_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *closeLbl = lv_label_create(test_close_btn);
+    lv_label_set_text(closeLbl, "Close");
+    lv_obj_center(closeLbl);
+
+    test_top_fan_btn = lv_btn_create(test_panel);
+    lv_obj_set_size(test_top_fan_btn, 140, 44);
+    lv_obj_align(test_top_fan_btn, LV_ALIGN_LEFT_MID, 0, -36);
+    lv_obj_add_event_cb(test_top_fan_btn, test_top_fan_btn_cb, LV_EVENT_CLICKED, NULL);
+    test_top_fan_label = lv_label_create(test_top_fan_btn);
+    lv_label_set_text(test_top_fan_label, "Top Fan: OFF");
+    lv_obj_center(test_top_fan_label);
+
+    test_bottom_fan_btn = lv_btn_create(test_panel);
+    lv_obj_set_size(test_bottom_fan_btn, 140, 44);
+    lv_obj_align(test_bottom_fan_btn, LV_ALIGN_RIGHT_MID, 0, -36);
+    lv_obj_add_event_cb(test_bottom_fan_btn, test_bottom_fan_btn_cb, LV_EVENT_CLICKED, NULL);
+    test_bottom_fan_label = lv_label_create(test_bottom_fan_btn);
+    lv_label_set_text(test_bottom_fan_label, "Bottom Fan: OFF");
+    lv_obj_center(test_bottom_fan_label);
+
+    lv_obj_t *heatBtn = lv_btn_create(test_panel);
+    lv_obj_set_size(heatBtn, 140, 44);
+    lv_obj_align(heatBtn, LV_ALIGN_LEFT_MID, 0, 34);
+    lv_obj_set_style_bg_color(heatBtn, lv_color_hex(0xFF7167), 0);
+    lv_obj_add_event_cb(heatBtn, test_peltier_heat_btn_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *heatLbl = lv_label_create(heatBtn);
+    lv_label_set_text(heatLbl, "Peltier Heat");
+    lv_obj_set_style_text_color(heatLbl, lv_color_black(), 0);
+    lv_obj_center(heatLbl);
+
+    lv_obj_t *coolBtn = lv_btn_create(test_panel);
+    lv_obj_set_size(coolBtn, 140, 44);
+    lv_obj_align(coolBtn, LV_ALIGN_RIGHT_MID, 0, 34);
+    lv_obj_set_style_bg_color(coolBtn, lv_color_hex(0x79C7FF), 0);
+    lv_obj_add_event_cb(coolBtn, test_peltier_cool_btn_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *coolLbl = lv_label_create(coolBtn);
+    lv_label_set_text(coolLbl, "Peltier Cool");
+    lv_obj_set_style_text_color(coolLbl, lv_color_black(), 0);
+    lv_obj_center(coolLbl);
   }
 
   if(ui_Cold_button) {
@@ -2752,13 +3052,16 @@ void setup() {
   build_time_picker_modal();
   build_water_timer_modal();
   schedule_next_watering(true);
+  Serial.println("[BOOT] modals ready");
 
   xTaskCreatePinnedToCore(uiLoopTask, "UITask", 16384, NULL, 2, &UILoopTaskHandle, 1);
+  Serial.println("[BOOT] UI task started");
 
   // --- WIFI BOOT ROUTINE ---
   isConnecting = true;
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
+  Serial.println("[BOOT] wifi init start");
   load_wifi_credentials();
 
   bool wifiConnected = false;
@@ -2783,13 +3086,20 @@ void setup() {
 
   if(CloudTaskHandle == NULL) {
     xTaskCreatePinnedToCore(cloudTask, "CloudTask", 12288, NULL, 1, &CloudTaskHandle, 0);
+    Serial.println("[BOOT] cloud task started");
   }
 
   isConnecting = false;
   uiNeedsUpdate = true;
+  Serial.println("[BOOT] setup complete");
 }
 
 void loop() {
+  static unsigned long lastLoopBeat = 0;
+  if(millis() - lastLoopBeat >= 2000UL) {
+    lastLoopBeat = millis();
+    Serial.println("[LOOP] alive");
+  }
   checkSerialSensors();
   updateClock();
   evaluateControlLogic();
