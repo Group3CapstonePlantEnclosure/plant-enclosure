@@ -234,21 +234,29 @@ static void readSensors(float lux) {
 
 static void sendTelemetry() {
   unsigned long now = millis();
-  if(now - lastTelemetryMs < TELEMETRY_INTERVAL_MS) return;
+  
+  // 1. Check if 10 seconds have passed. If not, stop here.
+  if(now - lastTelemetryMs < TELEMETRY_INTERVAL_MS) return; 
+  
   float lux = 0.0f;
   if(vemlFound) lux = veml.readLux();
 
   lastTelemetryMs = now;
-  readSensors(lux);
+  
+  // 2. Gather the latest data from the sensors and I2C (KB2040)
+  readSensors(lux); 
 
-  // Add Soil Moisture (M) to the legacy format used by ESP parsing.
+  // 3. Format the data into a single string packet
   String packet =
     "T:" + String(currentTempF, 1) +
     ",H:" + String(currentHumidity, 0) +
     ",L:" + String(currentLux, 1) +
     ",M:" + String(currentSoil, 0);
     
-  COMM_SERIAL.println(packet);
+  // 4. THE UART PUSH: Send the packet over hardware TX/RX (Serial1)
+  COMM_SERIAL.println(packet); 
+  
+  // (Optional) Also print it to the USB Serial Monitor so you can see it on your PC
   Serial.println("UART Packet: " + packet);
 }
 
