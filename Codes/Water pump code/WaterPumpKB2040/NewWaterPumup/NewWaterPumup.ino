@@ -1,7 +1,7 @@
 /**
  * Water Pump System for Adafruit KB2040 (I2C Peripheral Edition)
- * Logic: Pump ON if > threshold + hysteresis, Pump OFF if < threshold - hysteresis
- * Button/I2C Command: Simulates 1500 value for 5 seconds
+ * Operates entirely on a 0-100% Moisture Scale
+ * 0% = Dry (1020 raw), 100% = Wet (600 raw)
  */
 
 #include <Wire.h>
@@ -13,9 +13,9 @@ int relayPin = 7;
 int mistPin = 8;
 int buttonPin = 9;
 
-// Threshold Logic
-int threshold = 950; 
-int hysteresis = 15;  // Buffer: ON at 1051+, OFF at 949-
+// Threshold Logic (NOW IN PERCENTAGES)
+int threshold = 12;   // Target moisture is 20%
+int hysteresis = 5;   // Buffer: ON if < 15%, OFF if > 25%
 bool pumpIsOn = false;
 
 // Override variables
@@ -27,47 +27,38 @@ const unsigned long simulatedOverrideDuration = 5000;
 bool arduinoMistCommand = false;
 bool buttonHandled = false;
 
-// Global tracker for moisture to send over I2C
-int currentMoistureToReport = 0;
+// Global tracker for moisture percentage to send over I2C
+int currentMoisturePct = 0;
 
 void setup() {
-  // Relay Setup (Active-Low: HIGH is OFF)
   pinMode(relayPin, OUTPUT);
-  digitalWrite(relayPin, HIGH); 
+  digitalWrite(relayPin, HIGH); // Relay Setup (Active-Low: HIGH is OFF)
 
   pinMode(mistPin, OUTPUT);
   digitalWrite(mistPin, LOW);
 
-  // Button with Internal Pullup
   pinMode(buttonPin, INPUT_PULLUP);
 
   Serial.begin(115200);
 
-  // Initialize I2C via Qwiic (Peripheral/Slave Mode)
   Wire.begin(I2C_ADDR);
-  Wire.onReceive(receiveEvent); // Triggered when Arduino sends a command
-  Wire.onRequest(requestEvent); // Triggered when Arduino asks for moisture data
+  Wire.onReceive(receiveEvent); 
+  Wire.onRequest(requestEvent); 
   
-  Serial.println("KB2040 I2C Water Pump Controller Online");
+  Serial.println("KB2040 I2C Water Pump Controller Online (Percentage Mode)");
 }
 
 void loop() {
   checkSerialMonitor();
   checkButton();
-  
-  // Constantly update what value we will send to the Arduino if asked
-  currentMoistureToReport = simulatedOverrideActive ? 1500 : analogRead(sensorPin);
-  
   updatePumpState();
   updateMistState();
-  // sendMoistureData() is removed because I2C onRequest handles it automatically!
 }
 
-// Function to trigger the 5-second "dry" simulation
 void trigger5SecondOverride() {
   simulatedOverrideActive = true;
   simulatedOverrideStart = millis();
-  Serial.println("--- Manual Override: Forcing Pump ON (Simulating 1500) ---");
+  Serial.println("--- Manual Override: Forcing Pump ON ---");
 }
 
 void checkSerialMonitor() {
@@ -84,12 +75,10 @@ void checkButton() {
   static bool currentButtonState = HIGH;
   bool reading = digitalRead(buttonPin);
 
-  // Reset timer if the physical pin state changes
   if (reading != lastButtonState) {
     lastDebounceTime = millis();
   }
 
-  // Only update the "true" state if it's been stable for 50ms
   if ((millis() - lastDebounceTime) > 50) {
     if (reading != currentButtonState) {
       currentButtonState = reading;
@@ -111,81 +100,75 @@ void updateMistState() {
 }
 
 void updatePumpState() {
-  int currentReading = analogRead(sensorPin);
-  int actualSensorValue = currentReading; 
+  int rawValue = analogRead(sensorPin);
+  
+  // Convert Raw Value to 0-100%
+  int mappedPct = map(rawValue, 1020, 600, 0, 100);
+  mappedPct = constrain(mappedPct, 0, 100);
 
-  // Handle the Button/Serial/I2C Override
+  // Handle the Override (Force to 0% to trigger pump)
   if (simulatedOverrideActive) {
     if (millis() - simulatedOverrideStart < simulatedOverrideDuration) {
-      currentReading = 1500; // Force to high value to trigger ON
+      mappedPct = 0; 
     } else {
       simulatedOverrideActive = false;
-      Serial.println("--- Override Complete: Returning to Sensor Control ---");
+      Serial.println("--- Override Complete ---");
     }
   }
 
-  // --- HYSTERESIS LOGIC (Pump ON when High/Dry) ---
-  if (currentReading > (threshold + hysteresis)) {
+  currentMoisturePct = mappedPct;
+
+  // --- PERCENTAGE HYSTERESIS LOGIC ---
+  // Turn ON if it gets too dry (below threshold - buffer)
+  if (currentMoisturePct <= (threshold - hysteresis)) {
     pumpIsOn = true;
   } 
-  else if (currentReading < (threshold - hysteresis)) {
+  // Turn OFF if it gets wet enough (above threshold + buffer)
+  else if (currentMoisturePct >= (threshold + hysteresis)) {
     pumpIsOn = false;
   }
 
-  // Set the Physical Relay (active-low relay)
+  // Set the Physical Relay
   if (pumpIsOn) {
-    digitalWrite(relayPin, LOW);  // Relay coil energized
+    digitalWrite(relayPin, LOW);  
   } else {
-    digitalWrite(relayPin, HIGH); // Relay coil idle
+    digitalWrite(relayPin, HIGH); 
   }
 
-  // Status Monitor (Limited to once per second)
+  // Print status to KB2040 Serial Monitor
   static unsigned long lastPrint = 0;
   if (millis() - lastPrint > 1000) {
     lastPrint = millis();
-    Serial.print("Raw Sensor: "); Serial.print(actualSensorValue);
-    Serial.print(" | Logic Value: "); Serial.print(currentReading);
+    Serial.print("Raw Sensor: "); Serial.print(rawValue);
+    Serial.print(" | Moisture: "); Serial.print(currentMoisturePct); Serial.print("%");
+    Serial.print(" | Threshold: "); Serial.print(threshold); Serial.print("%");
     Serial.print(" | Pump: "); Serial.println(pumpIsOn ? "ON" : "OFF");
   }
 }
 
-// ====================================================================
 // ==================== I2C EVENT HANDLERS ============================
-// ====================================================================
 
-// Triggers when the Arduino Master SENDS data
 void receiveEvent(int howMany) {
-  if (howMany < 1) return; // Ignore empty transmissions
+  if (howMany < 1) return; 
   
-  byte cmd = Wire.read(); // Read the first byte (The Command ID)
+  byte cmd = Wire.read(); 
   
-  if (cmd == 1) {
-    trigger5SecondOverride(); // PUMP ON COMMAND
-  } 
-  else if (cmd == 2) {
-    arduinoMistCommand = true; // MIST ON
-    Serial.println("I2C Command: Mist ON");
-  } 
-  else if (cmd == 3) {
-    arduinoMistCommand = false; // MIST OFF
-    Serial.println("I2C Command: Mist OFF");
-  }
+  if (cmd == 1) trigger5SecondOverride(); 
+  else if (cmd == 2) arduinoMistCommand = true; 
+  else if (cmd == 3) arduinoMistCommand = false; 
   else if (cmd == 4 && howMany >= 3) {
-    // Threshold Update: expects Command(4) + MSB + LSB
     byte msb = Wire.read();
     byte lsb = Wire.read();
-    threshold = (msb << 8) | lsb;
-    Serial.print("I2C Command: New System Threshold set to ");
-    Serial.println(threshold);
+    threshold = (msb << 8) | lsb; // Update the percentage threshold
+    Serial.print("I2C Command: New Threshold set to ");
+    Serial.print(threshold); Serial.println("%");
   }
 }
 
-// Triggers when the Arduino Master REQUESTS data
 void requestEvent() {
-  // Break the current reading into 2 bytes and send it back
-  byte msb = (currentMoistureToReport >> 8) & 0xFF;
-  byte lsb = currentMoistureToReport & 0xFF;
-  
+  // Send the clean 0-100% value directly back to the Arduino
+  byte msb = (currentMoisturePct >> 8) & 0xFF;
+  byte lsb = currentMoisturePct & 0xFF;
   Wire.write(msb);
   Wire.write(lsb);
 }

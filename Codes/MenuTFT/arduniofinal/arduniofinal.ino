@@ -50,7 +50,7 @@ int lightPwm = 0;
 int lightLevel = 3;
 bool bottomFanOn = false;
 
-const unsigned long PELTIER_PULSE_MS = 20000UL; // <-- CHANGED to 20 seconds
+const unsigned long PELTIER_PULSE_MS = 40000UL; // <-- CHANGED to 20 seconds
 const unsigned long PELTIER_SWITCH_GUARD_MS = 5000UL; // Still enforces a 5s safety cooldown between hot/cold
 bool pendingPeltierChange = false;
 PeltierMode pendingPeltierMode = PELTIER_OFF;
