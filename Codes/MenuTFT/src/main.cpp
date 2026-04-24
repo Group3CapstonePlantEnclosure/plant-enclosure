@@ -830,6 +830,24 @@ void load_settings_from_firebase() {
     patch_firebase_payload("{\"sensor_test_cmd\":false}");
   }
 
+  // Flash command: written by web UI / Raspberry Pi, relayed to Arduino via Serial2.
+  if(!doc["flash_cmd"].isNull()) {
+    static int lastFlashCmd = -1;
+    int flashVal = doc["flash_cmd"].as<int>();
+    if(flashVal != lastFlashCmd) {
+      lastFlashCmd = flashVal;
+      if(flashVal == 1) {
+        Serial2.println("CMD:FLASH_ON");
+        Serial2.flush();
+        sysLog("Web Command: Flash ON");
+      } else {
+        Serial2.println("CMD:FLASH_OFF");
+        Serial2.flush();
+        sysLog("Web Command: Flash OFF");
+      }
+    }
+  }
+
   if(doc["fetch_logs_cmd"] == true) {
     DynamicJsonDocument logDoc(3072);
     logDoc["fetch_logs_cmd"] = false;
@@ -1354,7 +1372,16 @@ static void override_heating_btn_cb(lv_event_t * e) {
 
 static void override_mist_btn_cb(lv_event_t * e) {
   LV_UNUSED(e);
-  send_override_command("mist", "mist");
+  // Use persistent override states so auto control does not immediately undo a manual tap.
+  if(overrideMistModeState == 1) {
+    send_override_command("mist off", "Mist: OFF");
+    overrideMistModeState = 2;
+    if(override_mist_mode_label) lv_label_set_text(override_mist_mode_label, "Mist: OFF");
+  } else {
+    send_override_command("mist on", "Mist: ON");
+    overrideMistModeState = 1;
+    if(override_mist_mode_label) lv_label_set_text(override_mist_mode_label, "Mist: ON");
+  }
 }
 
 static void override_mist_mode_btn_cb(lv_event_t * e) {

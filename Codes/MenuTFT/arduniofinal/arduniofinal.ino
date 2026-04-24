@@ -48,6 +48,8 @@ bool fanOn = false;
 bool lightOn = false;
 int lightPwm = 0;
 int lightLevel = 3;
+int savedLightPwm = 0;  // target PWM to restore when flash ends
+bool flashActive = false;
 bool bottomFanOn = false;
 
 const unsigned long PELTIER_PULSE_MS = 40000UL; // <-- CHANGED to 20 seconds
@@ -73,6 +75,16 @@ static void applyLightPwm(int pwm) {
   lightPwm = constrain(pwm, 0, 255);
   analogWrite(LIGHT_PWM_PIN, lightPwm);
   lightOn = (lightPwm > 0);
+}
+
+static void requestLightPwm(int pwm) {
+  int target = constrain(pwm, 0, 255);
+  if(flashActive) {
+    // Keep flash at full brightness, but remember the latest requested light state.
+    savedLightPwm = target;
+    return;
+  }
+  applyLightPwm(target);
 }
 
 static void setMist(bool enable) {
@@ -292,10 +304,25 @@ static void processCommand(const String &input) {
     return;
   }
 
+  // Camera flash: temporarily force full brightness, then restore previous state.
+  if(cmd == "CMD:FLASH_ON") {
+    if(!flashActive) {
+      savedLightPwm = lightPwm;
+      flashActive = true;
+    }
+    applyLightPwm(255);
+    return;
+  }
+  if(cmd == "CMD:FLASH_OFF") {
+    flashActive = false;
+    applyLightPwm(savedLightPwm);
+    return;
+  }
+
   // Light commands.
   if(cmd.startsWith("CMD:LIGHT,")) {
     int pwmValue = cmd.substring(10).toInt();
-    applyLightPwm(pwmValue);
+    requestLightPwm(pwmValue);
     if(pwmValue > 0) {
       if(pwmValue < 120) lightLevel = 1;
       else if(pwmValue < 220) lightLevel = 2;
@@ -304,11 +331,11 @@ static void processCommand(const String &input) {
     return;
   }
   if(cmd.equalsIgnoreCase("light on")) {
-    applyLightPwm(pwmForLevel(lightLevel));
+    requestLightPwm(pwmForLevel(lightLevel));
     return;
   }
   if(cmd.equalsIgnoreCase("light off")) {
-    applyLightPwm(0);
+    requestLightPwm(0);
     return;
   }
   if(cmd.equalsIgnoreCase("light auto")) {
@@ -317,17 +344,17 @@ static void processCommand(const String &input) {
   }
   if(cmd.equalsIgnoreCase("lvl 1")) {
     lightLevel = 1;
-    applyLightPwm(pwmForLevel(lightLevel));
+    requestLightPwm(pwmForLevel(lightLevel));
     return;
   }
   if(cmd.equalsIgnoreCase("lvl 2")) {
     lightLevel = 2;
-    applyLightPwm(pwmForLevel(lightLevel));
+    requestLightPwm(pwmForLevel(lightLevel));
     return;
   }
   if(cmd.equalsIgnoreCase("lvl 3")) {
     lightLevel = 3;
-    applyLightPwm(pwmForLevel(lightLevel));
+    requestLightPwm(pwmForLevel(lightLevel));
     return;
   }
 
