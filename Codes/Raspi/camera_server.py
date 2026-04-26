@@ -7,6 +7,7 @@ Raspberry Pi Zero 2W + OV5647 5MP
 import io
 import time
 import threading
+import subprocess
 import requests
 import socket
 import os
@@ -46,8 +47,8 @@ cam_state = {
     "mode_id":    9,
     "fps":        30,
     "brightness": 0.0,
-    "contrast":   1.0,
-    "saturation": 1.0,
+    "contrast":   2.0,
+    "saturation": 2.0,
     "vflip":      False,
     "hmirror":    False,
     "is_still":   False,
@@ -132,6 +133,7 @@ def generate_mjpeg():
     while True:
         with cam_lock:
             buf = io.BytesIO()
+            # name="main" forces read from the RGB888 main stream, not the RAW sub-stream
             picam2.capture_file(buf, format='jpeg')
             frame = buf.getvalue()
 
@@ -149,10 +151,14 @@ def stream():
         # Return a blank/error image or 404 so UI doesn't crash
         return "Camera offline", 404
         
-    return Response(
+    resp = Response(
         generate_mjpeg(),
         mimetype="multipart/x-mixed-replace; boundary=frame"
     )
+    resp.headers["Cache-Control"]      = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"]             = "no-cache"
+    resp.headers["X-Accel-Buffering"]  = "no"   # disable nginx/proxy buffering
+    return resp
 
 # ─── Full-res 5MP capture (for plant ID) ─────────────────────────────────────
 @app.route("/capture")
@@ -234,9 +240,14 @@ def flash():
     val = request.args.get("v", "0")
     try:
         pwm_val = max(0, min(255, int(val)))
-        if HAS_GPIO:
-            flash_pwm.ChangeDutyCycle((pwm_val / 255) * 100)
-    except ValueError:
+        flash_on = 1 if pwm_val > 0 else 0
+        # Relay to Arduino via Firebase → ESP32 → Serial2
+        requests.patch(
+            f"{FIREBASE_DB_URL}/settings.json",
+            json={"flash_cmd": flash_on},
+            timeout=5
+        )
+    except Exception:
         pass
     return "OK", 200
 
@@ -259,18 +270,48 @@ def action():
         if var == "framesize":
             if val_i in VIDEO_MODES:
                 apply_config(val_i, VIDEO_MODES[val_i][1][0], settle=1.0)
+        elif var == "framerate":
+            if val_i in VIDEO_MODES[cam_state["mode_id"]][1]:
+                apply_config(cam_state["mode_id"], val_i, settle=0.8)
         elif var == "brightness":
             cam_state["brightness"] = val_f / 2.0
             picam2.set_controls({"Brightness": cam_state["brightness"]})
+        elif var == "contrast":
+            cam_state["contrast"] = max(0.0, 1.0 + float(val_f))
+            picam2.set_controls({"Contrast": cam_state["contrast"]})
+        elif var == "saturation":
+            cam_state["saturation"] = max(0.0, 1.0 + float(val_f))
+            picam2.set_controls({"Saturation": cam_state["saturation"]})
         elif var == "vflip":
             cam_state["vflip"] = bool(val_i)
             apply_config(cam_state["mode_id"], cam_state["fps"], settle=0.8)
-        # Add other actions as needed
+        elif var == "hmirror":
+            cam_state["hmirror"] = bool(val_i)
+            apply_config(cam_state["mode_id"], cam_state["fps"], settle=0.8)
 
     return "", 200
 
-# Paste your exact Tailscale URL here
-TAILSCALE_FUNNEL_URL = "https://picam.tail43c692.ts.net" 
+# ─── Tailscale Funnel ────────────────────────────────────────────────────────
+TAILSCALE_FUNNEL_URL = "https://picam.tail43c692.ts.net"
+
+def enable_tailscale_funnel(port: int = 5000):
+    """Enable Tailscale Funnel so external HTTPS traffic reaches Flask."""
+    try:
+        result = subprocess.run(
+            ["tailscale", "funnel", "--bg", str(port)],
+            capture_output=True, text=True, timeout=15
+        )
+        if result.returncode == 0:
+            print(f"[Tailscale] Funnel active → {TAILSCALE_FUNNEL_URL}")
+        else:
+            print(f"[Tailscale] funnel command failed: {result.stderr.strip()}")
+            print("[Tailscale] Run manually: sudo tailscale funnel --bg 5000")
+    except FileNotFoundError:
+        print("[Tailscale] 'tailscale' binary not found — funnel not started.")
+    except subprocess.TimeoutExpired:
+        print("[Tailscale] funnel command timed out.")
+    except Exception as e:
+        print(f"[Tailscale] Unexpected error: {e}")
 
 def push_ip_to_firebase():
     time.sleep(5) 
@@ -295,11 +336,14 @@ if __name__ == "__main__":
     # 1. Try to boot camera safely
     init_camera()
 
-    # 2. Start the Firebase IP push in the background
+    # 2. Enable Tailscale Funnel (forwards public HTTPS → local :5000)
+    enable_tailscale_funnel(5000)
+
+    # 3. Start the Firebase IP push in the background
     threading.Thread(target=push_ip_to_firebase, daemon=True).start()
     
     print(f"\n[SYSTEM] Server starting on Port 5000...")
     print(f"[SYSTEM] Public Link: {TAILSCALE_FUNNEL_URL}")
     
-    # 3. Start web server (Proxying via Tailscale Funnel)
+    # 4. Start web server (proxied via Tailscale Funnel)
     app.run(host='0.0.0.0', port=5000, threaded=True, debug=False)

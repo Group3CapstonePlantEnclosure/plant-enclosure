@@ -21,39 +21,27 @@
         .main-col { flex: 1 1 100%; max-width: 600px; display: flex; flex-direction: column; gap: 16px; transition: 0.4s ease; }
         
         .side-col { 
+            max-width: 0; 
+            max-height: 0;
             opacity: 0; 
             overflow: hidden; 
-            z-index: 10;
+            transition: max-width 0.4s cubic-bezier(0.25, 1, 0.5, 1), max-height 0.4s ease, opacity 0.3s ease, margin 0.4s ease; 
+            margin-left: 0;
+        }
+        .side-col.open { 
+            max-width: 340px; 
+            max-height: 1200px;
+            opacity: 1; 
+            margin-left: 20px; 
         }
         .side-inner { width: 320px; }
 
-        @media (min-width: 961px) {
-            .side-col {
-                position: absolute;
-                top: 0;
-                left: 100%;
-                max-width: 0;
-                max-height: 1500px;
-                transition: max-width 0.4s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.3s ease, margin 0.4s ease;
-            }
-            .side-col.open { 
-                max-width: 340px; 
-                opacity: 1; 
-                margin-left: 20px; 
-            }
-        }
-
         @media (max-width: 960px) {
-            .side-col {
-                max-width: 100%;
-                max-height: 0;
-                transition: max-height 0.4s ease, opacity 0.3s ease, margin 0.4s ease;
-            }
             .side-col.open { 
-                max-height: 1500px;
-                opacity: 1; 
-                margin-top: 15px; 
-                margin-bottom: 5px;
+                max-width: 600px; 
+                width: 100%;
+                margin-left: 0; 
+                margin-top: 20px; 
             }
             .side-inner { width: 100%; max-width: 600px; margin: 0 auto;}
         }
@@ -76,8 +64,15 @@
         #settingsToggleWrapper:hover #gearBtn, #settingsToggleWrapper:hover span { color: white !important; }
         #gearBtn.active { transform: rotate(90deg); color: var(--accent) !important; }
 
+        .dual-slider { position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 15px; margin-bottom: 10px; }
+        .slider-track { position: absolute; height: 100%; border-radius: 3px; z-index: 1; left: 0; background: var(--accent); }
+        .dual-slider input[type="range"] { position: absolute; width: 100%; -webkit-appearance: none; background: none; pointer-events: none; top: -6px; z-index: 2; margin: 0; left: 0; box-sizing: border-box; }
+        .dual-slider input[type="range"]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 20px; height: 20px; background: #111; border: 2px solid var(--accent); border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
+
         .ctrl-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         .ctrl-label { font-size: 13px; color: var(--muted); }
+        .cam-select { background: #222; color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 10px; border-radius: 8px; outline: none; font-size: 13px; cursor: pointer;}
+        .cam-select option { background: #222; color: white; }
         
         .switch { position: relative; display: inline-block; width: 40px; height: 22px; }
         .switch input { opacity: 0; width: 0; height: 0; }
@@ -140,7 +135,7 @@
     <div class="layout-wrapper" id="dashboard" style="display: none;">
         
         <div class="main-col">
-            <div class="data-card" style="padding: 15px; overflow: visible;">
+            <div class="data-card" style="padding: 15px;">
                 <div class="data-label" style="text-align: left; margin-bottom: 10px;">🔴 Live Feed</div>
                 
                 <div id="camStatus">Loading Camera IP from Firebase...</div>
@@ -162,89 +157,12 @@
                         <button id="gearBtn" title="Toggle Camera Settings">⚙️</button>
                         <span style="font-size: 13px; color: var(--text); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; transition: 0.2s;">Camera Settings</span>
                     </div>
-                    <span id="flashValText" style="color: var(--accent); font-size: 13px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">FLASH: OFF</span>
+                    <span id="flashValText" style="color: var(--accent); font-size: 13px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">FLASH: 0%</span>
                 </div>
 
-                <div class="side-col" id="settingsSidebar">
-                    <div class="side-inner">
-                        <div class="data-card" style="text-align: left;">
-                            <div class="data-label" style="margin-bottom: 20px; font-size: 14px; color: white;">⚙️ Camera Settings</div>
-                            
-                            <div style="display: flex; gap: 10px; margin-bottom: 25px;">
-                                <button class="btn btn-half" id="focusBtn" style="border-color: rgba(255,255,255,0.3);">🔍 Focus Info</button>
-                                <button class="btn btn-half" id="nightBtn" style="border-color: rgba(255,255,255,0.3);">🌙 Night Mode</button>
-                            </div>
-
-                            <div class="ctrl-row">
-                                <span class="ctrl-label">Brightness</span>
-                                <div style="display:flex; align-items:center; gap:8px;">
-                                    <input type="range" id="camBright" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('brightVal').textContent=this.value" onchange="sendCamCmd('brightness', parseInt(this.value))">
-                                    <span id="brightVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">0</span>
-                                </div>
-                            </div>
-                            <div class="ctrl-row">
-                                <span class="ctrl-label">Contrast</span>
-                                <div style="display:flex; align-items:center; gap:8px;">
-                                    <input type="range" id="camContrast" min="-2" max="2" value="1" step="1" style="width: 100px;" oninput="document.getElementById('contrastVal').textContent=this.value" onchange="sendCamCmd('contrast', parseInt(this.value) - 1)">
-                                    <span id="contrastVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">1</span>
-                                </div>
-                            </div>
-                            <div class="ctrl-row">
-                                <span class="ctrl-label">Saturation</span>
-                                <div style="display:flex; align-items:center; gap:8px;">
-                                    <input type="range" id="camSat" min="-2" max="2" value="1" step="1" style="width: 100px;" oninput="document.getElementById('satVal').textContent=this.value" onchange="sendCamCmd('saturation', parseInt(this.value) - 1)">
-                                    <span id="satVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">1</span>
-                                </div>
-                            </div>
-
-                            <div class="ctrl-row" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
-                                <span class="ctrl-label">Digital Zoom</span>
-                                <div style="display:flex; align-items:center; gap:8px;">
-                                    <input type="range" id="camZoom" min="100" max="300" value="100" step="1" style="width: 100px;" oninput="updateZoom(this.value)">
-                                    <span id="zoomVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">1.0x</span>
-                                </div>
-                            </div>
-
-                            <div style="margin-top: 25px; margin-bottom: 20px;">
-                                <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">Resolution & Frame Rate</div>
-
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
-                                    <button class="res-pill" data-id="10" onclick="setResolution(10)">📷 5MP<br><span>2592×1944</span></button>
-                                    <button class="res-pill active" data-id="9"  onclick="setResolution(9)">1080p<br><span>1440×1080</span></button>
-                                    <button class="res-pill" data-id="8"  onclick="setResolution(8)">720p<br><span>960×720</span></button>
-                                    <button class="res-pill" data-id="6"  onclick="setResolution(6)">480p<br><span>640×480</span></button>
-                                </div>
-
-                                <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; margin-top: 12px;">Frame Rate</div>
-                                <div id="fpsRow" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
-                                <div id="fpsNote" style="font-size: 11px; color: var(--muted); margin-top: 6px; font-style: italic;"></div>
-                            </div>
-
-                            <div class="ctrl-row" style="margin-top: 20px;">
-                                <span class="ctrl-label">Vertical Flip</span>
-                                <label class="switch"><input type="checkbox" id="camVflip" onchange="sendCamCmd('vflip', this.checked ? 1 : 0)"><span class="slider-tog"></span></label>
-                            </div>
-                            <div class="ctrl-row">
-                                <span class="ctrl-label">Mirror Image</span>
-                                <label class="switch"><input type="checkbox" id="camHmirror" onchange="sendCamCmd('hmirror', this.checked ? 1 : 0)"><span class="slider-tog"></span></label>
-                            </div>
-
-                            <button class="btn" id="resetCamBtn" style="margin-top: 20px; border-color: rgba(255,255,255,0.3); font-size: 13px; padding: 10px;">🔄 Reset Defaults</button>
-
-                            <div style="margin-top: 20px; padding: 12px; background: rgba(195,46,82,0.08); border: 1px solid rgba(195,46,82,0.2); border-radius: 10px;">
-                                <div style="font-size: 11px; color: #e8638a; font-weight: bold; margin-bottom: 4px;">🍇 Raspberry Pi Camera</div>
-                                <div style="font-size: 11px; color: var(--muted); line-height: 1.5;">
-                                    OV5647 · 5MP · 4:3<br>
-                                    Scan mode uses full 2592×1944 resolution automatically for best plant ID results.
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div style="display: flex; gap: 10px; width: 100%; margin-top: 15px; margin-bottom: 10px;">
-                    <button class="btn btn-half" id="flashOnBtn" style="color: var(--muted); border-color: rgba(255,255,255,0.2);" onclick="setFlash(true)">⚡ Flash ON</button>
-                    <button class="btn btn-half" id="flashOffBtn" style="color: var(--accent); border-color: rgba(255, 184, 79, 0.4); background: rgba(255, 184, 79, 0.12);" onclick="setFlash(false)">Flash OFF</button>
+                <div class="dual-slider">
+                    <div class="slider-track" id="streamFlashTrack" style="width: 0%;"></div>
+                    <input type="range" id="streamFlashSlider" min="0" max="100" value="0" step="1" oninput="updateStreamFlash()" onchange="finalizeStreamFlash()">
                 </div>
                 
                 <div style="display: flex; flex-direction: column; align-items: center; gap: 15px; width: 100%; margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
@@ -253,8 +171,6 @@
                     <img id="plantPreview" src="" style="width: 100%; border-radius: 12px; display: none; border: 1px solid rgba(255,255,255,0.1); aspect-ratio: 4 / 3; object-fit: cover;">
                     <div id="idStatus" style="font-size: 14px; color: var(--muted); text-align: center;">Ready to scan. High-resolution 5MP mode activated.</div>
                     
-                    <a href="https://group3capstoneplantenclosure.github.io/plant-enclosure/list.html" class="btn" id="viewPresetsBtn" style="display: none; margin-top: 15px; background: rgba(44, 255, 138, 0.15); border-color: rgba(44, 255, 138, 0.4); color: #2cff8a;" onclick="turnOffFlash()">🌿 VIEW ENCLOSURE PRESETS</a>
-
                     <button class="btn" id="scanBtn" style="color: var(--accent); border-color: rgba(255, 184, 79, 0.4);">📷 5MP CAPTURE & IDENTIFY</button>
                     <button class="btn" id="exitScannerBtn" style="display: none; background: rgba(255, 69, 58, 0.15); border-color: rgba(255, 69, 58, 0.4); color: #ff453a;">← Exit to Main Application</button>
 
@@ -302,6 +218,83 @@
                 <a href="https://group3capstoneplantenclosure.github.io/plant-enclosure/list.html" class="btn btn-half" onclick="turnOffFlash()">🌿 Browse Plants</a>
             </div>
         </div>
+
+        <div class="side-col" id="settingsSidebar">
+            <div class="side-inner">
+                <div class="data-card" style="text-align: left;">
+                    <div class="data-label" style="margin-bottom: 20px; font-size: 14px; color: white;">⚙️ Camera Settings</div>
+                    
+                    <div style="display: flex; gap: 10px; margin-bottom: 25px;">
+                        <button class="btn btn-half" id="focusBtn" style="border-color: rgba(255,255,255,0.3);">🔍 Focus Info</button>
+                        <button class="btn btn-half" id="nightBtn" style="border-color: rgba(255,255,255,0.3);">🌙 Night Mode</button>
+                    </div>
+
+                    <div class="ctrl-row">
+                        <span class="ctrl-label">Brightness</span>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <input type="range" id="camBright" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('brightVal').textContent=this.value" onchange="sendCamCmd('brightness', parseInt(this.value))">
+                            <span id="brightVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">0</span>
+                        </div>
+                    </div>
+                    <div class="ctrl-row">
+                        <span class="ctrl-label">Contrast</span>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <input type="range" id="camContrast" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('contrastVal').textContent=this.value" onchange="sendCamCmd('contrast', parseInt(this.value) - 1)">
+                            <span id="contrastVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">0</span>
+                        </div>
+                    </div>
+                    <div class="ctrl-row">
+                        <span class="ctrl-label">Saturation</span>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <input type="range" id="camSat" min="-2" max="2" value="0" step="1" style="width: 100px;" oninput="document.getElementById('satVal').textContent=this.value" onchange="sendCamCmd('saturation', parseInt(this.value) - 1)">
+                            <span id="satVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">0</span>
+                        </div>
+                    </div>
+
+                    <div class="ctrl-row" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <span class="ctrl-label">Digital Zoom</span>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <input type="range" id="camZoom" min="100" max="300" value="100" step="1" style="width: 100px;" oninput="updateZoom(this.value)">
+                            <span id="zoomVal" style="font-size:12px; color:var(--accent); width:26px; text-align:right;">1.0x</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 25px; margin-bottom: 20px;">
+                        <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">Resolution & Frame Rate</div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
+                            <button class="res-pill" data-id="10" onclick="setResolution(10)">📷 5MP<br><span>2592×1944</span></button>
+                            <button class="res-pill active" data-id="9"  onclick="setResolution(9)">1080p<br><span>1440×1080</span></button>
+                            <button class="res-pill" data-id="8"  onclick="setResolution(8)">720p<br><span>960×720</span></button>
+                            <button class="res-pill" data-id="6"  onclick="setResolution(6)">480p<br><span>640×480</span></button>
+                        </div>
+
+                        <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; margin-top: 12px;">Frame Rate</div>
+                        <div id="fpsRow" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+                        <div id="fpsNote" style="font-size: 11px; color: var(--muted); margin-top: 6px; font-style: italic;"></div>
+                    </div>
+
+                    <div class="ctrl-row" style="margin-top: 20px;">
+                        <span class="ctrl-label">Vertical Flip</span>
+                        <label class="switch"><input type="checkbox" id="camVflip" onchange="sendCamCmd('vflip', this.checked ? 1 : 0)"><span class="slider-tog"></span></label>
+                    </div>
+                    <div class="ctrl-row">
+                        <span class="ctrl-label">Mirror Image</span>
+                        <label class="switch"><input type="checkbox" id="camHmirror" onchange="sendCamCmd('hmirror', this.checked ? 1 : 0)"><span class="slider-tog"></span></label>
+                    </div>
+
+                    <button class="btn" id="resetCamBtn" style="margin-top: 20px; border-color: rgba(255,255,255,0.3); font-size: 13px; padding: 10px;">🔄 Reset Defaults</button>
+
+                    <div style="margin-top: 20px; padding: 12px; background: rgba(195,46,82,0.08); border: 1px solid rgba(195,46,82,0.2); border-radius: 10px;">
+                        <div style="font-size: 11px; color: #e8638a; font-weight: bold; margin-bottom: 4px;">🍇 Raspberry Pi Camera</div>
+                        <div style="font-size: 11px; color: var(--muted); line-height: 1.5;">
+                            OV5647 · 5MP · 4:3<br>
+                            Scan mode uses full 2592×1944 resolution automatically for best plant ID results.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
 <script type="module">
@@ -309,7 +302,9 @@
 
     const settingsRef = ref(db, 'settings');
     let activeCameraIp = null;
+    let flashTimeout = null;
     let isStreamRunning = false;
+    let wasStreamRunning = false;
     let nightModeActive = false;
     let cameraSettingsInitialized = false;
 
@@ -456,40 +451,38 @@
         update(settingsRef, { cam_zoom: scale });
     };
 
-    function applyFlashButtonState(isOn) {
-        const onBtn  = document.getElementById('flashOnBtn');
-        const offBtn = document.getElementById('flashOffBtn');
-        document.getElementById('flashValText').textContent = `FLASH: ${isOn ? 'ON' : 'OFF'}`;
-        if (isOn) {
-            onBtn.style.color        = 'var(--accent)';
-            onBtn.style.borderColor  = 'rgba(255, 184, 79, 0.4)';
-            onBtn.style.background   = 'rgba(255, 184, 79, 0.12)';
-            offBtn.style.color       = 'var(--muted)';
-            offBtn.style.borderColor = 'rgba(255,255,255,0.2)';
-            offBtn.style.background  = 'rgba(255,255,255,0.08)';
-        } else {
-            offBtn.style.color       = 'var(--accent)';
-            offBtn.style.borderColor = 'rgba(255, 184, 79, 0.4)';
-            offBtn.style.background  = 'rgba(255, 184, 79, 0.12)';
-            onBtn.style.color        = 'var(--muted)';
-            onBtn.style.borderColor  = 'rgba(255,255,255,0.2)';
-            onBtn.style.background   = 'rgba(255,255,255,0.08)';
-        }
+    const flashSlider = document.getElementById('streamFlashSlider');
+
+    function pauseForSlider() {
+        wasStreamRunning = isStreamRunning;
+        if (isStreamRunning) stopStream();
     }
 
-    window.setFlash = function(isOn) {
-        applyFlashButtonState(isOn);
-        // Write to Firebase — ESP32 picks this up and relays CMD:FLASH_ON/OFF to Arduino
-        update(settingsRef, { flash_cmd: isOn ? 1 : 0 });
-        // Also hit Pi endpoint (it will mirror the same Firebase write)
-        if (activeCameraIp) {
-            fetch(`${activeCameraIp}/flash?v=${isOn ? 255 : 0}`).catch(() => {});
+    flashSlider.addEventListener('mousedown',  pauseForSlider);
+    flashSlider.addEventListener('touchstart', pauseForSlider, { passive: true });
+
+    window.updateStreamFlash = function() {
+        const val = flashSlider.value;
+        document.getElementById('streamFlashTrack').style.width = val + '%';
+        document.getElementById('flashValText').textContent = `FLASH: ${val}%`;
+        if (activeCameraIp && !flashTimeout) {
+            flashTimeout = setTimeout(() => {
+                const pwm = Math.round((flashSlider.value / 100) * 255);
+                fetch(`${activeCameraIp}/flash?v=${pwm}`).catch(() => {});
+                flashTimeout = null;
+            }, 100);
         }
     };
 
+    window.finalizeStreamFlash = function() {
+        if (activeCameraIp) {
+            const pwm = Math.round((flashSlider.value / 100) * 255);
+            fetch(`${activeCameraIp}/flash?v=${pwm}`).catch(() => {});
+        }
+        if (wasStreamRunning) setTimeout(startStream, 200);
+    };
+
     window.turnOffFlash = function() {
-        applyFlashButtonState(false);
-        update(settingsRef, { flash_cmd: 0 });
         if (activeCameraIp) {
             stopStream();
             fetch(`${activeCameraIp}/flash?v=0`, { keepalive: true }).catch(() => {});
@@ -576,8 +569,8 @@
         if (streamWasOn) stopStream();
 
         await sendCamCmd('brightness', 0, false);
-        await sendCamCmd('contrast', 1, false);    // UI 1 → internal 2.0
-        await sendCamCmd('saturation', 1, false);  // UI 1 → internal 2.0
+        await sendCamCmd('contrast', -1, false); 
+        await sendCamCmd('saturation', -1, false); 
         await sendCamCmd('special_effect', 0, false);
         
         window.updateZoom(100);
@@ -593,7 +586,6 @@
         const preview = document.getElementById("plantPreview");
         const btn     = document.getElementById("scanBtn");
         const exitBtn = document.getElementById("exitScannerBtn");
-        const presetBtn = document.getElementById("viewPresetsBtn"); // Added for resetting presets button
 
         status.textContent = "Ready to scan. High-resolution 5MP mode activated.";
         status.style.color = "var(--muted)";
@@ -602,7 +594,6 @@
         preview.src = "";
         
         exitBtn.style.display = "none";
-        presetBtn.style.display = "none"; // Hide presets button on exit
         btn.style.display = "block";
     };
 
@@ -613,7 +604,6 @@
         const preview = document.getElementById("plantPreview");
         const btn     = document.getElementById("scanBtn");
         const exitBtn = document.getElementById("exitScannerBtn");
-        const presetBtn = document.getElementById("viewPresetsBtn"); // Grab the new button element
 
         if (isStreamRunning) stopStream();
 
@@ -651,41 +641,7 @@
                 });
                 resultHTML += `</span>`;
             }
-            // --- NEW DATABASE CHECK LOGIC ---
-            const supportedPlants = [
-                { name: "Pothos", url: "plant.html?plant=pothos" },
-                { name: "Snake Plant", url: "plant.html?plant=snake" },
-                { name: "Monstera", url: "plant.html?plant=monstera" },
-                { name: "Spider Plant", url: "plant.html?plant=spider" },
-                { name: "Aloe Vera", url: "plant.html?plant=aloe" },
-                { name: "Peace Lily", url: "plant.html?plant=peace" },
-                { name: "ZZ Plant", url: "plant.html?plant=zz" },
-                { name: "Fiddle Leaf Fig", url: "plant.html?plant=fiddle" },
-                { name: "Jade Plant", url: "plant.html?plant=jade" },
-                { name: "Rubber Plant", url: "plant.html?plant=rubber" }
-            ];
-
-            // Use .find() instead of .some() to grab the exact matching object
-            const matchedPlant = supportedPlants.find(p => 
-                (commonName && commonName.toLowerCase().includes(p.name.toLowerCase())) || 
-                (sciName && sciName.toLowerCase().includes(p.name.toLowerCase()))
-            );
-
-            if (matchedPlant) {
-                presetBtn.style.display = "block";
-                
-                // Route directly to the specific plant's parameter page on GitHub Pages!
-                presetBtn.href = "https://group3capstoneplantenclosure.github.io/plant-enclosure/" + matchedPlant.url;
-                
-                // Customize the button text
-                presetBtn.innerHTML = `🌿 VIEW ${matchedPlant.name.toUpperCase()} PRESETS`; 
-                
-                status.innerHTML = resultHTML + `<br><br><span style="color:#2cff8a; font-size:12px; font-weight:bold;">✨ Preset available in database!</span>`;
-            } else {
-                presetBtn.style.display = "none";
-                status.innerHTML = resultHTML + `<br><br><span style="color:var(--muted); font-size:12px;">(No enclosure presets found for this species)</span>`;
-            }
-            // --------------------------------
+            status.innerHTML = resultHTML;
 
             await update(settingsRef, {
                 identified_plant:      displayName,
